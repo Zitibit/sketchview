@@ -1312,7 +1312,7 @@ export default function SketchViewClone() {
     );
     setSelectedElements([]);
   };
-  
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "c") {
@@ -1358,7 +1358,7 @@ export default function SketchViewClone() {
       tabIndex={0}
       onWheel={handleWheel}
     >
-      <Header />
+      <Header menu={{}} />
       {/* Left Sidebar */}
       <LeftToolBar
         currentTool={currentTool}
