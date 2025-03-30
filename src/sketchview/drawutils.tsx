@@ -134,17 +134,40 @@ export const renderSelection = (
   ctx: CanvasRenderingContext2D,
   zoom: number
 ) => {
-  const padding = 5;
+  const padding = 8;
   const minX = Math.min(element.x1, element.x2) - padding;
   const maxX = Math.max(element.x1, element.x2) + padding;
   const minY = Math.min(element.y1, element.y2) - padding;
   const maxY = Math.max(element.y1, element.y2) + padding;
+  const width = maxX - minX;
+  const height = maxY - minY;
 
-  ctx.strokeStyle = "#3d7eff";
-  ctx.lineWidth = 1 / zoom;
-  ctx.setLineDash([5 / zoom, 5 / zoom]);
-  ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+  // Draw selection rectangle
+  ctx.strokeStyle = '#3d7eff';
+  ctx.lineWidth = 2 / zoom; // Scale with zoom
+  ctx.setLineDash([5, 5]);
+  ctx.strokeRect(minX, minY, width, height);
   ctx.setLineDash([]);
+
+  // Draw resize handles (8 handles: corners and midpoints)
+  const handleSize = 8 / zoom; // Scale with zoom
+  const handles = [
+    { x: minX, y: minY }, // top-left
+    { x: minX + width / 2, y: minY }, // top-center
+    { x: maxX, y: minY }, // top-right
+    { x: maxX, y: minY + height / 2 }, // right-center
+    { x: maxX, y: maxY }, // bottom-right
+    { x: minX + width / 2, y: maxY }, // bottom-center
+    { x: minX, y: maxY }, // bottom-left
+    { x: minX, y: minY + height / 2 } // left-center
+  ];
+
+  ctx.fillStyle = '#3d7eff';
+  handles.forEach(handle => {
+    ctx.beginPath();
+    ctx.arc(handle.x, handle.y, handleSize, 0, Math.PI * 2);
+    ctx.fill();
+  });
 };
 
 export const renderGroupSelection = (
