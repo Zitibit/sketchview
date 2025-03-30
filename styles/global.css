@@ -1,0 +1,412 @@
+/* http://meyerweb.com/eric/tools/css/reset/ 
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+
+html,
+body,
+div,
+span,
+applet,
+object,
+iframe,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+blockquote,
+pre,
+a,
+abbr,
+acronym,
+address,
+big,
+cite,
+code,
+del,
+dfn,
+em,
+img,
+ins,
+kbd,
+q,
+s,
+samp,
+small,
+strike,
+strong,
+sub,
+sup,
+tt,
+var,
+b,
+u,
+i,
+center,
+dl,
+dt,
+dd,
+ol,
+ul,
+li,
+fieldset,
+form,
+label,
+legend,
+table,
+caption,
+tbody,
+tfoot,
+thead,
+tr,
+th,
+td,
+article,
+aside,
+canvas,
+details,
+embed,
+figure,
+figcaption,
+footer,
+header,
+hgroup,
+menu,
+nav,
+output,
+ruby,
+section,
+summary,
+time,
+mark,
+audio,
+video {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	font-size: 100%;
+	font: inherit;
+	vertical-align: baseline;
+}
+
+/* HTML5 display-role reset for older browsers */
+article,
+aside,
+details,
+figcaption,
+figure,
+footer,
+header,
+hgroup,
+menu,
+nav,
+section {
+	display: block;
+}
+
+body {
+	line-height: 1;
+}
+
+ol,
+ul {
+	list-style: none;
+}
+
+blockquote,
+q {
+	quotes: none;
+}
+
+blockquote:before,
+blockquote:after,
+q:before,
+q:after {
+	content: '';
+	content: none;
+}
+
+table {
+	border-collapse: collapse;
+	border-spacing: 0;
+}
+
+/* Apply Lato font globally */
+body {
+	/* font-family: "Lato", sans-serif; */
+	font-family: "Teachers", sans-serif !important;
+	font-optical-sizing: auto;
+	font-weight: 300;
+	font-style: normal;
+	margin: 0;
+	padding: 0;
+}
+
+.radix-themes {
+	font-family: "Teachers", sans-serif !important;
+}
+
+.headerContainer {
+	display: flex;
+	position: fixed;
+	top: 0;
+	left: 0;
+	z-index: 1;
+	background: #fff;
+}
+
+.header {
+	display: flex;
+	height: 40px;
+	padding: 0 20px;
+}
+
+.header__item__brand a {
+	text-decoration: none;
+	font-weight: 500;
+	font-style: normal;
+	font-size: 24px;
+	color: #000;
+	font-family: "Teachers", sans-serif !important;
+	font-optical-sizing: auto;
+	font-style: normal;
+	font-variation-settings:
+		"wdth" 100;
+}
+
+.leftToolBar {
+	display: flex;
+	width: 220px;
+	justify-content: space-between;
+	align-items: center;
+	flex-direction: column;
+	box-shadow: rgba(0, 0, 0, 0.15) 0px 5px 15px 0px;
+	position: absolute;
+	left: 10px;
+	z-index: 1;
+	background: #fff;
+	top: 40px;
+	padding: 16px 12px;
+	height: calc(100vh - 80px);
+	overflow: auto;
+	border-radius: 8px;
+}
+
+.leftToolBar button {
+	border: none;
+	background: #fff;
+	display: flex;
+	justify-content: center;
+	flex-direction: column;
+	align-items: center;
+	padding: 4px;
+	border-radius: 6px;
+}
+
+.toggleButton {
+	position: absolute;
+	right: -33px;
+	top: 2px;
+	box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+	background: #fff;
+	display: flex;
+	font-size: 24px;
+	display: none;
+}
+
+.leftToolBar button svg {
+	font-size: 24px;
+}
+
+.leftToolBar__section {
+	display: flex;
+	width: 100%;
+	flex-direction: column;
+	margin-bottom: 16px;
+	padding-bottom: 16px;
+	border-bottom: 1px solid #eee;
+}
+
+.leftToolBar__section__title {
+	font-size: 14px;
+	margin-bottom: 8px;
+	font-weight: 500;
+}
+
+.leftToolBar__section__tools {}
+
+.leftToolBar__section__tools--selectors {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	/* 3 items per row */
+	gap: 10px;
+	/* Adjust spacing */
+}
+input[type="range"] {
+	-webkit-appearance: none;
+	/* Remove default styling (for WebKit browsers) */
+	appearance: none;
+	width: 100%;
+	height: 2px;
+	background: linear-gradient(to right, #000, #000);
+	/* Green gradient */
+	border-radius: 5px;
+	outline: none;
+	transition: 0.2s;
+	cursor: pointer;
+}
+
+/* Customizing the thumb (slider handle) for WebKit browsers */
+input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 16px;
+	height: 16px;
+	background: #000;
+	border-radius: 50%;
+	cursor: pointer;
+	transition: 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+	background: #000;
+}
+
+/* For Firefox */
+input[type="range"]::-moz-range-thumb {
+	width: 16px;
+	height: 16px;
+	background: #000;
+	border-radius: 50%;
+	cursor: pointer;
+}
+
+.activeButtonStyle {
+	background: #f1ecea !important;
+}
+
+.toptoolbarWrapper{
+	position: absolute;
+	z-index: 1;
+	width: 100%;
+	display: flex;
+	justify-content: end;
+}
+
+.toptoolbar {
+	padding: 10px;
+    flex-wrap: nowrap;
+    display: flex;
+}
+
+.toptoolbar__group{
+	display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    justify-content: center;
+}
+.iconbox{
+	width: 100%;
+    height: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #000;
+    border: 1px solid #000;
+    margin: 10% 0;
+    padding: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.iconbox:hover{
+	background: #eee;
+}
+
+.previewSection{
+	position: absolute;
+    right: 25px;
+    bottom: 60px;
+    width: 200px;
+    height: 150px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    border: 1px solid #ddd;
+    overflow: hidden;
+    z-index: 10;
+}
+
+.footer {
+	position: absolute;
+	bottom: 0px;
+	z-index: 10;
+	background: #ffffffd6;
+	border-radius: 8px;
+	padding: 8px;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	width: 100vw;
+	justify-content: space-between;
+	align-items: center;
+}
+.footer__center{
+	margin: 0 auto;
+    position: absolute;
+    width: 100%;
+	height: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.footer__right{
+	margin-left: auto;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+}
+.editActions{
+	display: flex;
+	width: 100px;
+	gap: 12px;
+}
+
+.zoom-slider-container {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-right: 20px;
+}
+
+.reset-zoom-button {
+	color: #000;
+	border: 2px solid #000;
+	padding: 8px 12px;
+	font-size: 14px;
+	cursor: pointer;
+	transition: all 0.3s ease;
+	border-radius: 4px;
+	white-space: nowrap;
+  }
+  
+  .reset-zoom-button:hover {
+	background-color: white;
+	color: black;
+	border: 2px solid black;
+  }
+
+  .reset-zoom-button:disabled {
+	pointer-events: none;
+	cursor: not-allowed;
+	opacity: 0.5;
+  }
