@@ -1312,7 +1312,7 @@ export default function SketchViewClone() {
     );
     setSelectedElements([]);
   };
-  
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "c") {
@@ -1358,7 +1358,7 @@ export default function SketchViewClone() {
       tabIndex={0}
       onWheel={handleWheel}
     >
-      <Header />
+      <Header menu={{}} />
       {/* Left Sidebar */}
       <LeftToolBar
         currentTool={currentTool}
@@ -1387,14 +1387,8 @@ export default function SketchViewClone() {
         setShowPreview={setShowPreview}
         collaborationEnabled={collaborationEnabled}
         setCollaborationEnabled={setCollaborationEnabled}
-        redo={redo}
-        historyIndex={historyIndex}
         exportPNG={exportPNG}
-        selectedElements={selectedElements}
-        copiedElements={copiedElements}
-        pasteElements={pasteElements}
-        history={history}
-      />
+        />
 
       <Collaboration
         collaborationEnabled={collaborationEnabled}
