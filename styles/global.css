@@ -168,9 +168,9 @@ body {
 	text-decoration: none;
 	font-weight: 500;
 	font-style: normal;
-	font-size: 24px;
+	font-size: 32px;
 	color: #000;
-	font-family: "Teachers", sans-serif !important;
+	font-family: "Audiowide", sans-serif !important;
 	font-optical-sizing: auto;
 	font-style: normal;
 	font-variation-settings:
@@ -188,9 +188,9 @@ body {
 	left: 10px;
 	z-index: 1;
 	background: #fff;
-	top: 40px;
+	top: 80px;
 	padding: 16px 12px;
-	height: calc(100vh - 80px);
+	height: auto;
 	overflow: auto;
 	border-radius: 8px;
 }
@@ -318,7 +318,7 @@ input[type="range"]::-moz-range-thumb {
     cursor: pointer;
     color: #000;
     border: 1px solid #000;
-    margin: 10% 0;
+    margin: 0;
     padding: 6px;
     font-size: 14px;
     cursor: pointer;
@@ -328,6 +328,9 @@ input[type="range"]::-moz-range-thumb {
 }
 .iconbox:hover{
 	background: #eee;
+}
+.editActions .iconbox{
+	height: 24px;
 }
 
 .previewSection{
@@ -357,6 +360,7 @@ input[type="range"]::-moz-range-thumb {
 	width: 100vw;
 	justify-content: space-between;
 	align-items: center;
+	box-shadow: rgba(0, 0, 0, 0.05) 0px 6px 24px 0px, rgba(0, 0, 0, 0.08) 0px 0px 0px 1px;
 }
 .footer__center{
 	margin: 0 auto;
@@ -379,6 +383,8 @@ input[type="range"]::-moz-range-thumb {
 	display: flex;
 	width: 100px;
 	gap: 12px;
+	justify-content: center;
+    align-items: center;
 }
 
 .zoom-slider-container {
@@ -409,4 +415,63 @@ input[type="range"]::-moz-range-thumb {
 	pointer-events: none;
 	cursor: not-allowed;
 	opacity: 0.5;
+  }
+
+  .footer__left__item label{
+	display: flex;
+	flex-wrap: nowrap;
+  }
+  .checkbox-root {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	font-size: 16px;
+  }
+  
+  .checkbox-control {
+	width: 20px;
+	height: 20px;
+	border: 2px solid black;
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: white;
+	transition: background 0.2s, border-color 0.2s;
+  }
+  
+  .checkbox-root[data-state="checked"] .checkbox-control {
+	background-color: black;
+	border-color: black;
+  }
+  
+  .checkbox-indicator {
+	color: white;
+	font-size: 14px;
+	font-weight: bold;
+	display: none;
+	justify-content: center;
+	align-items: center;
+  }
+  
+  .checkbox-root[data-state="checked"] .checkbox-indicator {
+	display: flex !important;
+  }
+  
+  .checkbox-label {
+	color: black;
+  }
+  .footer__left{
+	display: flex;
+	gap: 24px;
+  }
+  .footer__left__item{
+	position: relative;
+	z-index: 1;
+	position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }

@@ -1,4 +1,3 @@
-import { Accordion } from '@ark-ui/react/accordion';
 import {
   ChevronDownIcon,
   Share as Share2Off,
@@ -309,59 +308,6 @@ const LeftToolBar = ({
       <div className="leftToolBar__section">
         {/* Tool-specific settings */}
         {renderToolSettings()}
-      </div>
-      <div className="leftToolBar__section">
-        <div className="leftToolBar__section__title">Grid</div>
-        <div className="leftToolBar__section__tools">
-          {" "}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Grid size={16} />
-            <span style={{ fontSize: "14px" }}>Show Grid:</span>
-            <input
-              type="checkbox"
-              checked={showGrid}
-              onChange={() => setShowGrid(!showGrid)}
-            />
-          </div>
-          {showGrid && (
-            <>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <span style={{ fontSize: "14px" }}>Size:</span>
-                <input
-                  type="range"
-                  min="10"
-                  max="50"
-                  step="5"
-                  value={gridSize}
-                  onChange={(e) => setGridSize(parseInt(e.target.value))}
-                  style={{ flex: 1 }}
-                />
-                <span style={{ width: "30px", textAlign: "right" }}>
-                  {gridSize}
-                </span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <span style={{ fontSize: "14px" }}>Contrast:</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  value={gridContrast}
-                  onChange={(e) => setGridContrast(parseFloat(e.target.value))}
-                  style={{ flex: 1 }}
-                />
-                <span style={{ width: "30px", textAlign: "right" }}>
-                  {gridContrast.toFixed(1)}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
       </div>
     </aside>
   );

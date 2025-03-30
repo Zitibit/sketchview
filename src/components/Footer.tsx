@@ -1,4 +1,4 @@
-import { Checkbox } from "@ark-ui/react";
+import { Checkbox } from "@ark-ui/react/checkbox";
 import {
   Trash2,
   Share2,
@@ -11,24 +11,36 @@ import {
   Maximize2,
   Minimize2,
   X,
+  Check,
 } from "lucide-react";
-
-
+import { CheckIcon } from "lucide-react";
 import Zoom from "./Zoom";
 import Preview from "./Preview";
 import useStore from "../store";
 import { createRoughElement } from "../sketchview/drawutils";
 
-const Footer = ({ undo, previewRef, setElementsWithHistory, pasteElements, redo }) => {
+const Footer = ({
+  undo,
+  previewRef,
+  setElementsWithHistory,
+  pasteElements,
+  redo,
+}) => {
   const {
     copiedElements,
     setCopiedElements,
     elements,
     selectedElements,
     setSelectedElements,
-    historyIndex
+    historyIndex,
+    showGrid,
+    setShowGrid,
+    gridSize,
+    setGridSize,
+    gridContrast,
+    setGridContrast,
   } = useStore();
-
+  console.log("hello");
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Delete" && selectedElements.length > 0) {
@@ -55,12 +67,55 @@ const Footer = ({ undo, previewRef, setElementsWithHistory, pasteElements, redo 
   return (
     <footer className="footer">
       <div className="footer__left">
-
-        
+        <div className="footer__left__item">
+          <span style={{ fontSize: "14px" }}>Size:</span>
+          <input
+            type="range"
+            min="10"
+            max="50"
+            step="5"
+            value={gridSize}
+            onChange={(e) => setGridSize(parseInt(e.target.value))}
+            style={{ flex: 1 }}
+          />
+          <span style={{ width: "30px", textAlign: "right" }}>{gridSize}</span>
+        </div>
+        <div className="footer__left__item">
+          <span style={{ fontSize: "14px" }}>Contrast:</span>
+          <input
+            type="range"
+            min="0"
+            max="2"
+            step="0.1"
+            value={gridContrast}
+            onChange={(e) => setGridContrast(parseFloat(e.target.value))}
+            style={{ flex: 1 }}
+          />
+          <span style={{ width: "30px", textAlign: "right" }}>
+            {gridContrast.toFixed(1)}
+          </span>
+        </div>
+        <div className="footer__left__item">
+          <Checkbox.Root
+            checked={showGrid}
+            onCheckedChange={(details) => setShowGrid(!!details.checked)}
+            className="checkbox-root"
+          >
+            <Checkbox.Control className="checkbox-control">
+              <Checkbox.Indicator className="checkbox-indicator">
+                <Check className="check-icon" strokeWidth={1} />
+              </Checkbox.Indicator>
+            </Checkbox.Control>
+            <Checkbox.Label className="checkbox-label">
+              Show Grid
+            </Checkbox.Label>
+            <Checkbox.HiddenInput />
+          </Checkbox.Root>
+        </div>
       </div>
       <div className="footer__center" onKeyDown={handleKeyDown}>
         <div className="editActions">
-        <div
+          <div
             className={
               selectedElements.length > 0
                 ? "iconbox activeButtonStyle"
@@ -69,7 +124,7 @@ const Footer = ({ undo, previewRef, setElementsWithHistory, pasteElements, redo 
             onClick={undo}
             title="Delete Selected"
           >
-             <Undo2 size={25}  strokeWidth={1}/>
+            <Undo2 size={25} strokeWidth={1} />
           </div>
           <div
             className={
@@ -119,7 +174,7 @@ const Footer = ({ undo, previewRef, setElementsWithHistory, pasteElements, redo 
             onClick={redo}
             title="Delete Selected"
           >
-             <Redo2 size={25}  strokeWidth={1}/>
+            <Redo2 size={25} strokeWidth={1} />
           </div>
         </div>
       </div>
