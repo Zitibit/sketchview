@@ -15,22 +15,11 @@ import {
 } from "lucide-react";
 
 const TopToolBar = ({
-  clearAll,
-  undo,
   showPreview,
   setShowPreview,
   collaborationEnabled,
   setCollaborationEnabled,
-  redo,
-  history,
-  historyIndex,
   exportPNG,
-  toolbarStyle,
-  selectedElements,
-  deleteSelected,
-  copySelected,
-  copiedElements,
-  pasteElements,
 }) => {
   return (
     <div className={"toptoolbarWrapper"}>

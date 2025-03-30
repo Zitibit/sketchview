@@ -206,6 +206,8 @@ const LeftToolBar = ({
   setGridContrast,
   fillColor,
   setFillColor,
+  leftSidebarOpen,
+  setLeftSidebarOpen
 }) => {
   return (
     <aside className="leftToolBar">
