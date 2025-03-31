@@ -15,12 +15,13 @@ export const RulerCorner = () => (
   }} />
 );
 
-export const Ruler = ({ type, width, height, zoom, offset }: {
+export const Ruler = ({ type, width, height, zoom, offset, onMouseDown }: {
   type: 'horizontal' | 'vertical';
   width: number;
   height: number;
   zoom: number;
   offset: { x: number; y: number };
+  onMouseDown?: React.MouseEventHandler<HTMLCanvasElement>;
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rulerSize = 20; // Size of the ruler in pixels

@@ -21,6 +21,15 @@ import Preview from "../components/Preview";
 import Footer from "../components/Footer";
 import { Ruler, RulerCorner, Guides } from "../components/Ruler";
 
+export interface RulerProps {
+  type: "horizontal" | "vertical";
+  width: number;
+  height: number;
+  zoom: number;
+  offset: { x: number; y: number };
+  onMouseDown?: (e: React.MouseEvent) => void;
+}
+
 export default function SketchViewClone() {
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
