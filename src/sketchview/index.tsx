@@ -69,6 +69,7 @@ type Element = {
   groupIds?: string[];
   originalOpacity?: number;
   convexHull?: Point[];
+  boundingBox?: { minX: number; minY: number; maxX: number; maxY: number };
 };
 
 const COLORS = [
@@ -392,6 +393,25 @@ const isPointInConvexHull = (hull: Point[], point: Point): boolean => {
   return inside;
 };
 
+// Calculate bounding box for points
+const calculateBoundingBox = (points: Point[]): { minX: number; minY: number; maxX: number; maxY: number } => {
+  if (points.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+
+  let minX = points[0][0];
+  let minY = points[0][1];
+  let maxX = points[0][0];
+  let maxY = points[0][1];
+
+  for (const [x, y] of points) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+
+  return { minX, minY, maxX, maxY };
+};
+
 export default function ExcalidrawClone() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -446,6 +466,7 @@ export default function ExcalidrawClone() {
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<Peer.DataConnection | null>(null);
   const rtreeRef = useRef<RBush<any>>(new RBush());
+  const renderRequestRef = useRef<number | null>(null);
 
   // Initialize RBush with elements
   const updateRTree = useCallback((elements: Element[]) => {
@@ -453,10 +474,19 @@ export default function ExcalidrawClone() {
     tree.clear();
     
     elements.forEach(element => {
-      const minX = Math.min(element.x1, element.x2);
-      const maxX = Math.max(element.x1, element.x2);
-      const minY = Math.min(element.y1, element.y2);
-      const maxY = Math.max(element.y1, element.y2);
+      let minX, minY, maxX, maxY;
+      
+      if (element.tool === 'freedraw' && element.boundingBox) {
+        minX = element.boundingBox.minX;
+        minY = element.boundingBox.minY;
+        maxX = element.boundingBox.maxX;
+        maxY = element.boundingBox.maxY;
+      } else {
+        minX = Math.min(element.x1, element.x2);
+        maxX = Math.max(element.x1, element.x2);
+        minY = Math.min(element.y1, element.y2);
+        maxY = Math.max(element.y1, element.y2);
+      }
       
       tree.insert({
         minX,
@@ -469,13 +499,20 @@ export default function ExcalidrawClone() {
     });
   }, []);
 
-  // Calculate convex hull for freehand elements
-  const updateConvexHulls = useCallback((elements: Element[]) => {
+  // Calculate convex hull and bounding box for freehand elements
+  const updateFreehandElements = useCallback((elements: Element[]): Element[] => {
     return elements.map(element => {
-      if (element.tool === 'freedraw' && element.points && element.points.length > 2) {
+      if (element.tool === 'freedraw' && element.points) {
+        // Calculate bounding box from points
+        const boundingBox = calculateBoundingBox(element.points);
         return {
           ...element,
-          convexHull: calculateConvexHull(element.points)
+          x1: boundingBox.minX,
+          y1: boundingBox.minY,
+          x2: boundingBox.maxX,
+          y2: boundingBox.maxY,
+          boundingBox,
+          convexHull: element.points.length > 2 ? calculateConvexHull(element.points) : undefined
         };
       }
       return element;
@@ -525,7 +562,7 @@ export default function ExcalidrawClone() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const elementsWithHulls = updateConvexHulls(parsed);
+        const elementsWithHulls = updateFreehandElements(parsed);
         setElements(elementsWithHulls);
         setHistory([elementsWithHulls]);
         updateRTree(elementsWithHulls);
@@ -533,7 +570,7 @@ export default function ExcalidrawClone() {
         console.error("Failed to parse saved data", e);
       }
     }
-  }, [updateRTree, updateConvexHulls]);
+  }, [updateRTree, updateFreehandElements]);
 
   // Save to localStorage and update R-tree
   useEffect(() => {
@@ -575,13 +612,13 @@ export default function ExcalidrawClone() {
 
       conn.on("data", (data: any) => {
         if (data.type === "elements") {
-          const elementsWithHulls = updateConvexHulls(data.elements);
+          const elementsWithHulls = updateFreehandElements(data.elements);
           setElements(elementsWithHulls);
           setHistory([elementsWithHulls]);
           setHistoryIndex(0);
           updateRTree(elementsWithHulls);
         } else if (data.type === "element") {
-          const elementsWithHulls = updateConvexHulls([...elements, data.element]);
+          const elementsWithHulls = updateFreehandElements([...elements, data.element]);
           setElements(elementsWithHulls);
           updateRTree(elementsWithHulls);
         }
@@ -593,7 +630,7 @@ export default function ExcalidrawClone() {
         peerRef.current.destroy();
       }
     };
-  }, [collaborationEnabled, connectionCount, elements, updateRTree, updateConvexHulls]);
+  }, [collaborationEnabled, connectionCount, elements, updateRTree, updateFreehandElements]);
 
   // Check for peer ID in URL on load
   useEffect(() => {
@@ -653,13 +690,13 @@ export default function ExcalidrawClone() {
 
     conn.on("data", (data: any) => {
       if (data.type === "elements") {
-        const elementsWithHulls = updateConvexHulls(data.elements);
+        const elementsWithHulls = updateFreehandElements(data.elements);
         setElements(elementsWithHulls);
         setHistory([elementsWithHulls]);
         setHistoryIndex(0);
         updateRTree(elementsWithHulls);
       } else if (data.type === "element") {
-        const elementsWithHulls = updateConvexHulls([...elements, data.element]);
+        const elementsWithHulls = updateFreehandElements([...elements, data.element]);
         setElements(elementsWithHulls);
         updateRTree(elementsWithHulls);
       }
@@ -688,7 +725,7 @@ export default function ExcalidrawClone() {
   // Modified setElements to auto-push to history
   const setElementsWithHistory = useCallback(
     (newElements: Element[]) => {
-      const elementsWithHulls = updateConvexHulls(newElements);
+      const elementsWithHulls = updateFreehandElements(newElements);
       setElements(elementsWithHulls);
       updateRTree(elementsWithHulls);
       pushToHistory(elementsWithHulls);
@@ -699,7 +736,7 @@ export default function ExcalidrawClone() {
         });
       }
     },
-    [pushToHistory, collaborationEnabled, updateRTree, updateConvexHulls]
+    [pushToHistory, collaborationEnabled, updateRTree, updateFreehandElements]
   );
 
   // Undo functionality
@@ -1234,6 +1271,7 @@ export default function ExcalidrawClone() {
             updatedElement.points = scaledPoints;
             if (scaledPoints.length > 2) {
               updatedElement.convexHull = calculateConvexHull(scaledPoints);
+              updatedElement.boundingBox = calculateBoundingBox(scaledPoints);
             }
           }
 
@@ -1319,6 +1357,7 @@ export default function ExcalidrawClone() {
             updatedElement.points = scaledPoints;
             if (scaledPoints.length > 2) {
               updatedElement.convexHull = calculateConvexHull(scaledPoints);
+              updatedElement.boundingBox = calculateBoundingBox(scaledPoints);
             }
           }
 
@@ -1389,6 +1428,7 @@ export default function ExcalidrawClone() {
           updatedElement.points = movedPoints;
           if (movedPoints.length > 2) {
             updatedElement.convexHull = calculateConvexHull(movedPoints);
+            updatedElement.boundingBox = calculateBoundingBox(movedPoints);
           }
         }
 
@@ -1583,89 +1623,95 @@ export default function ExcalidrawClone() {
     ctx.restore();
   }, [elements, zoom, offset, dimensions, opacity]);
 
-  // Render canvas
+  // Optimized canvas rendering with requestAnimationFrame
   const renderCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    renderGrid();
-
-    ctx.save();
-    ctx.translate(offset.x, offset.y);
-    ctx.scale(zoom, zoom);
-
-    elements.forEach((element) => {
-      ctx.globalAlpha = (element.opacity || opacity) / 100;
-
-      switch (element.tool) {
-        case "rectangle":
-        case "ellipse":
-        case "line":
-        case "arrow":
-        case "diamond":
-          if (element.roughElement) {
-            const rc = rough.canvas(canvas);
-            if (
-              element.tool === "arrow" &&
-              element.roughElement.line &&
-              element.roughElement.head
-            ) {
-              rc.draw(element.roughElement.line);
-              rc.draw(element.roughElement.head);
-            } else {
-              rc.draw(element.roughElement);
-            }
-          }
-          break;
-        case "freedraw":
-          renderFreehand(element);
-          break;
-        case "text":
-          renderText(element);
-          break;
-      }
-
-      renderSelection(element);
-    });
-
-    if (currentElement) {
-      ctx.globalAlpha = (currentElement.opacity || opacity) / 100;
-
-      switch (currentElement.tool) {
-        case "rectangle":
-        case "ellipse":
-        case "line":
-        case "arrow":
-        case "diamond":
-          const roughElement = createRoughElement(currentElement);
-          if (roughElement) {
-            const rc = rough.canvas(canvas);
-            if (
-              currentElement.tool === "arrow" &&
-              roughElement.line &&
-              roughElement.head
-            ) {
-              rc.draw(roughElement.line);
-              rc.draw(roughElement.head);
-            } else {
-              rc.draw(roughElement);
-            }
-          }
-          break;
-        case "freedraw":
-          renderFreehand(currentElement);
-          break;
-      }
+    if (renderRequestRef.current) {
+      cancelAnimationFrame(renderRequestRef.current);
     }
 
-    ctx.restore();
+    renderRequestRef.current = requestAnimationFrame(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-    renderRegionSelection();
+      const ctx = canvas.getContext("2d")!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    renderPreview();
+      renderGrid();
+
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(zoom, zoom);
+
+      elements.forEach((element) => {
+        ctx.globalAlpha = (element.opacity || opacity) / 100;
+
+        switch (element.tool) {
+          case "rectangle":
+          case "ellipse":
+          case "line":
+          case "arrow":
+          case "diamond":
+            if (element.roughElement) {
+              const rc = rough.canvas(canvas);
+              if (
+                element.tool === "arrow" &&
+                element.roughElement.line &&
+                element.roughElement.head
+              ) {
+                rc.draw(element.roughElement.line);
+                rc.draw(element.roughElement.head);
+              } else {
+                rc.draw(element.roughElement);
+              }
+            }
+            break;
+          case "freedraw":
+            renderFreehand(element);
+            break;
+          case "text":
+            renderText(element);
+            break;
+        }
+
+        renderSelection(element);
+      });
+
+      if (currentElement) {
+        ctx.globalAlpha = (currentElement.opacity || opacity) / 100;
+
+        switch (currentElement.tool) {
+          case "rectangle":
+          case "ellipse":
+          case "line":
+          case "arrow":
+          case "diamond":
+            const roughElement = createRoughElement(currentElement);
+            if (roughElement) {
+              const rc = rough.canvas(canvas);
+              if (
+                currentElement.tool === "arrow" &&
+                roughElement.line &&
+                roughElement.head
+              ) {
+                rc.draw(roughElement.line);
+                rc.draw(roughElement.head);
+              } else {
+                rc.draw(roughElement);
+              }
+            }
+            break;
+          case "freedraw":
+            renderFreehand(currentElement);
+            break;
+        }
+      }
+
+      ctx.restore();
+
+      renderRegionSelection();
+
+      renderPreview();
+    });
   }, [
     elements,
     currentElement,
@@ -1694,6 +1740,15 @@ export default function ExcalidrawClone() {
     gridContrast,
     renderCanvas,
   ]);
+
+  // Clean up animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (renderRequestRef.current) {
+        cancelAnimationFrame(renderRequestRef.current);
+      }
+    };
+  }, []);
 
   // Handle text element click
   const handleTextElementClick = (element: Element) => {
@@ -1768,12 +1823,11 @@ export default function ExcalidrawClone() {
   // Paste elements with AABB transforms and convex hull preservation
   const pasteElements = () => {
     if (copiedElements.length === 0) return;
-
+  
     const offsetX = 20;
     const offsetY = 20;
     const newElements = copiedElements.map((el) => {
-      const id =
-        Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
       
       const newElement = {
         ...el,
@@ -1782,34 +1836,30 @@ export default function ExcalidrawClone() {
         y1: el.y1 + offsetY,
         x2: el.x2 + offsetX,
         y2: el.y2 + offsetY,
-        roughElement: [
-          "rectangle",
-          "ellipse",
-          "line",
-          "arrow",
-          "diamond",
-        ].includes(el.tool)
-          ? createRoughElement({
-              ...el,
-              x1: el.x1 + offsetX,
-              y1: el.y1 + offsetY,
-              x2: el.x2 + offsetX,
-              y2: el.y2 + offsetY,
-            })
-          : undefined,
       };
-
-      // Handle freehand elements with convex hull
+  
+      // Special handling for freedraw elements
       if (el.tool === 'freedraw' && el.points) {
         newElement.points = transformPoints(el.points, offsetX, offsetY);
         if (el.convexHull) {
           newElement.convexHull = transformPoints(el.convexHull, offsetX, offsetY);
         }
+        if (el.boundingBox) {
+          newElement.boundingBox = {
+            minX: el.boundingBox.minX + offsetX,
+            minY: el.boundingBox.minY + offsetY,
+            maxX: el.boundingBox.maxX + offsetX,
+            maxY: el.boundingBox.maxY + offsetY
+          };
+        }
+      } else {
+        // For other elements, create new rough element
+        newElement.roughElement = createRoughElement(newElement);
       }
-
+  
       return newElement;
     });
-
+  
     setElementsWithHistory([...elements, ...newElements]);
     setSelectedElements(newElements);
   };
@@ -2249,9 +2299,28 @@ export default function ExcalidrawClone() {
         : undefined,
     };
 
-    // Calculate convex hull for freehand elements
-    if (currentTool === "freedraw" && elementToAdd.points && elementToAdd.points.length > 2) {
-      elementToAdd.convexHull = calculateConvexHull(elementToAdd.points);
+    // Calculate convex hull and bounding box for freehand elements
+    if (currentTool === "freedraw" && currentElement?.points) {
+      // Only create element if we have enough points
+      if (currentElement.points.length >= 2) {
+        const boundingBox = calculateBoundingBox(currentElement.points);
+        const elementToAdd = {
+          ...currentElement,
+          x1: boundingBox.minX,
+          y1: boundingBox.minY,
+          x2: boundingBox.maxX,
+          y2: boundingBox.maxY,
+          boundingBox,
+          convexHull: currentElement.points.length > 2 ? 
+            calculateConvexHull(currentElement.points) : undefined
+        };
+        
+        setElementsWithHistory([...elements, elementToAdd]);
+        setSelectedElements([elementToAdd]);
+      }
+      setIsDrawing(false);
+      setCurrentElement(null);
+      return;
     }
 
     setElementsWithHistory([...elements, elementToAdd]);

@@ -3,6 +3,7 @@ import Header from "@/src/components/Header";
 
 import "@/styles/global.css";
 import "@/styles/popover.css";
+import "@/styles/home.css";
 import "@radix-ui/themes/styles.css";
 import { Theme } from "@radix-ui/themes";
 
