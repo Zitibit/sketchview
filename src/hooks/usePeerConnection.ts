@@ -64,12 +64,12 @@ export default function usePeerConnection() {
       }
 
       console.log("🔗 Incoming connection established:", conn.peer);
-      setConnectionCount((prev) => prev + 1);
+      setConnectionCount(connectionCount + 1);
       connRef.current = conn;
 
       conn.on("close", () => {
         console.log("Connection closed:", conn.peer);
-        setConnectionCount((prev) => prev - 1);
+        setConnectionCount(connectionCount - 1);
       });
 
       conn.on("error", (err) => {
