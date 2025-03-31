@@ -53,6 +53,7 @@ type Element = {
   x2: number;
   y2: number;
   points?: Point[];
+  originalPoints?: Point[]; 
   text?: string;
   tool: Tool;
   roughElement?: any;
@@ -337,14 +338,11 @@ const Guides = ({ guides }: { guides: { x?: number; y?: number }[] }) => {
   );
 };
 
-// Custom convex hull implementation (Andrew's monotone chain algorithm)
 const calculateConvexHull = (points: Point[]): Point[] => {
   if (points.length <= 2) return points;
 
-  // Sort points lexographically (first by x, then by y)
   points.sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
 
-  // Build lower hull
   const lower: Point[] = [];
   for (const point of points) {
     while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
@@ -353,7 +351,6 @@ const calculateConvexHull = (points: Point[]): Point[] => {
     lower.push(point);
   }
 
-  // Build upper hull
   const upper: Point[] = [];
   for (let i = points.length - 1; i >= 0; i--) {
     const point = points[i];
@@ -363,23 +360,19 @@ const calculateConvexHull = (points: Point[]): Point[] => {
     upper.push(point);
   }
 
-  // Remove duplicates
   upper.pop();
   lower.pop();
 
   return [...lower, ...upper];
 };
 
-// Helper function for convex hull calculation
 const cross = (o: Point, a: Point, b: Point): number => {
   return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
 };
 
-// Check if point is inside convex hull
 const isPointInConvexHull = (hull: Point[], point: Point): boolean => {
   if (hull.length < 3) return false;
 
-  // Ray casting algorithm
   let inside = false;
   for (let i = 0, j = hull.length - 1; i < hull.length; j = i++) {
     const xi = hull[i][0], yi = hull[i][1];
@@ -393,7 +386,6 @@ const isPointInConvexHull = (hull: Point[], point: Point): boolean => {
   return inside;
 };
 
-// Calculate bounding box for points
 const calculateBoundingBox = (points: Point[]): { minX: number; minY: number; maxX: number; maxY: number } => {
   if (points.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
@@ -441,8 +433,8 @@ export default function ExcalidrawClone() {
   const [hachureGap, setHachureGap] = useState(10);
   const [freehandSettings, setFreehandSettings] = useState({
     thinning: 0.6,
-    smoothing: 0.5,
-    streamline: 0.5,
+    smoothing: 0.2,  // Reduced from 0.5
+    streamline: 0.2, // Reduced from 0.5
     taperStart: 0,
     taperEnd: 0,
   });
@@ -503,7 +495,6 @@ export default function ExcalidrawClone() {
   const updateFreehandElements = useCallback((elements: Element[]): Element[] => {
     return elements.map(element => {
       if (element.tool === 'freedraw' && element.points) {
-        // Calculate bounding box from points
         const boundingBox = calculateBoundingBox(element.points);
         return {
           ...element,
@@ -759,16 +750,25 @@ export default function ExcalidrawClone() {
 
   // Convert screen coordinates to canvas coordinates
   const screenToCanvas = (x: number, y: number) => {
+    // return {
+    //   x: (x - offset.x) / zoom,
+    //   y: (y - offset.y) / zoom,
+    // };
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+  
+    // Account for canvas position and scroll
     return {
-      x: (x - offset.x) / zoom,
-      y: (y - offset.y) / zoom,
+      x: (x - rect.left - offset.x) / zoom,
+      y: (y - rect.top - offset.y) / zoom
     };
   };
 
   // Handle mouse wheel for zoom and pan
   const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
+      
       const delta = -e.deltaY;
       const zoomFactor = 1.1;
       const newZoom = delta > 0 ? zoom * zoomFactor : zoom / zoomFactor;
@@ -794,6 +794,8 @@ export default function ExcalidrawClone() {
         y: prev.y - deltaY,
       }));
     }
+    // Force immediate redraw
+    renderCanvas();
   };
 
   // Enhanced createRoughElement with all RoughJS options
@@ -873,12 +875,10 @@ export default function ExcalidrawClone() {
   const isPointInFreehand = (element: Element, x: number, y: number) => {
     if (!element.points || element.points.length < 2) return false;
     
-    // Use convex hull for precise hit detection
     if (element.convexHull && element.convexHull.length > 2) {
       return isPointInConvexHull(element.convexHull, [x, y]);
     }
     
-    // Fallback to perfect-freehand's path if no convex hull
     const canvas = canvasRef.current;
     if (!canvas) return false;
 
@@ -938,7 +938,6 @@ export default function ExcalidrawClone() {
 
   // Find elements at point using RBush for broad-phase detection
   const findElementsAtPosition = (x: number, y: number) => {
-    // First use RBush for broad-phase detection
     const results = rtreeRef.current.search({
       minX: x,
       minY: y,
@@ -946,7 +945,6 @@ export default function ExcalidrawClone() {
       maxY: y
     });
 
-    // Then perform precise hit detection on candidate elements
     return results
       .map(result => elements.find(el => el.id === result.id))
       .filter(el => el && isPointInElement(el, x, y)) as Element[];
@@ -975,7 +973,28 @@ export default function ExcalidrawClone() {
   // Render freehand drawing
   const renderFreehand = (element: Element) => {
     if (!element.points || element.points.length < 2) return;
+  
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+  
+    const ctx = canvas.getContext("2d")!;
+    if (!ctx) return;
 
+    
+    // For precise mode (when holding Shift)
+    if (element.preciseMode) {
+      ctx.beginPath();
+      ctx.moveTo(element.points[0][0], element.points[0][1]);
+      for (let i = 1; i < element.points.length; i++) {
+        ctx.lineTo(element.points[i][0], element.points[i][1]);
+      }
+      ctx.strokeStyle = element.stroke || color;
+      ctx.lineWidth = element.strokeWidth || strokeWidth;
+      ctx.stroke();
+      return;
+    }
+  
+    // Normal perfect-freehand rendering
     const pathData = PerfectFreehand.getStroke(element.points, {
       size: element.strokeWidth || strokeWidth,
       thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
@@ -990,11 +1009,7 @@ export default function ExcalidrawClone() {
         cap: true,
       },
     });
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
+    
     const path = new Path2D();
     if (pathData.length > 0) {
       path.moveTo(pathData[0][0], pathData[0][1]);
@@ -1003,7 +1018,7 @@ export default function ExcalidrawClone() {
       }
       path.closePath();
     }
-
+  
     ctx.fillStyle = element.stroke || color;
     ctx.fill(path);
   };
@@ -1036,7 +1051,6 @@ export default function ExcalidrawClone() {
     ctx.translate(offset.x, offset.y);
     ctx.scale(zoom, zoom);
 
-    // For freehand elements, show convex hull visualization
     if (element.tool === 'freedraw' && element.convexHull && element.convexHull.length > 2) {
       ctx.strokeStyle = "rgba(61, 126, 255, 0.5)";
       ctx.lineWidth = 1 / zoom;
@@ -1061,7 +1075,7 @@ export default function ExcalidrawClone() {
     const height = maxY - minY;
 
     ctx.strokeStyle = "#3d7eff";
-    ctx.lineWidth = 2 / zoom;
+    ctx.lineWidth = 1 / zoom;
     ctx.setLineDash([5, 5]);
     ctx.strokeRect(minX, minY, width, height);
     ctx.setLineDash([]);
@@ -1261,7 +1275,6 @@ export default function ExcalidrawClone() {
               : undefined,
           };
 
-          // Update convex hull for freehand elements
           if (el.tool === 'freedraw' && el.points) {
             const scaledPoints = el.points.map(([px, py]) => {
               const relativeX = (px - el.x1) * scaleX;
@@ -1451,12 +1464,10 @@ export default function ExcalidrawClone() {
     const canvasCoords = screenToCanvas(x, y);
     const { x: canvasX, y: canvasY } = canvasCoords;
 
-    // Find elements at this position using RBush for broad-phase detection
     const elementsAtPos = findElementsAtPosition(canvasX, canvasY);
     
     if (elementsAtPos.length > 0) {
       setIsErasing(true);
-      // Store original opacity and reduce opacity by half for visual feedback
       setElementsToErase(elementsAtPos);
       setElements(prev => prev.map(el => {
         if (elementsAtPos.some(e => e.id === el.id)) {
@@ -1478,10 +1489,8 @@ export default function ExcalidrawClone() {
     const canvasCoords = screenToCanvas(x, y);
     const { x: canvasX, y: canvasY } = canvasCoords;
 
-    // Find elements at this position using RBush for broad-phase detection
     const elementsAtPos = findElementsAtPosition(canvasX, canvasY);
     
-    // Add new elements to erase list and reduce their opacity for visual feedback
     const newElementsToErase = [...new Set([...elementsToErase, ...elementsAtPos])];
     setElementsToErase(newElementsToErase);
     
@@ -1501,7 +1510,6 @@ export default function ExcalidrawClone() {
   const handleEraserMouseUp = () => {
     if (!isErasing) return;
     
-    // Remove elements that were marked for erasing
     setElementsWithHistory(elements.filter(el => !elementsToErase.some(e => e.id === el.id)));
     
     setIsErasing(false);
@@ -1562,7 +1570,7 @@ export default function ExcalidrawClone() {
     ctx.restore();
   };
 
-  // Render preview
+  // Render preview with highlighted region
   const renderPreview = useCallback(() => {
     const canvas = previewRef.current;
     if (!canvas) return;
@@ -1614,14 +1622,21 @@ export default function ExcalidrawClone() {
       }
     });
 
+    // Draw highlighted viewport region
     ctx.strokeStyle = "#3d7eff";
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.strokeRect(viewportX, viewportY, viewportWidth, viewportHeight);
     ctx.setLineDash([]);
 
+    // Fill the viewport region with semi-transparent color
+    ctx.fillStyle = "rgba(61, 126, 255, 0.1)";
+    ctx.fillRect(viewportX, viewportY, viewportWidth, viewportHeight);
+
     ctx.restore();
   }, [elements, zoom, offset, dimensions, opacity]);
+
+
 
   // Optimized canvas rendering with requestAnimationFrame
   const renderCanvas = useCallback(() => {
@@ -1636,7 +1651,10 @@ export default function ExcalidrawClone() {
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      renderGrid();
+      // Render grid if enabled
+      if (showGrid) {
+        renderGrid();
+      }
 
       ctx.save();
       ctx.translate(offset.x, offset.y);
@@ -1749,7 +1767,18 @@ export default function ExcalidrawClone() {
       }
     };
   }, []);
-
+  useEffect(() => {
+    const observer = new ResizeObserver(() => {
+      setDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+      renderCanvas(); // Redraw on resize
+    });
+  
+    observer.observe(document.body);
+    return () => observer.disconnect();
+  }, [renderCanvas]);
   // Handle text element click
   const handleTextElementClick = (element: Element) => {
     if (currentTool === "select" && element.tool === "text") {
@@ -1820,25 +1849,49 @@ export default function ExcalidrawClone() {
     setCopiedElements(selectedElements);
   };
 
-  // Paste elements with AABB transforms and convex hull preservation
+  // Paste elements with proper scaling and transformation
   const pasteElements = () => {
     if (copiedElements.length === 0) return;
   
     const offsetX = 20;
     const offsetY = 20;
+    
+    // Calculate bounding box of copied elements
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    copiedElements.forEach(el => {
+      minX = Math.min(minX, el.x1, el.x2);
+      minY = Math.min(minY, el.y1, el.y2);
+      maxX = Math.max(maxX, el.x1, el.x2);
+      maxY = Math.max(maxY, el.y1, el.y2);
+    });
+    
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
     const newElements = copiedElements.map((el) => {
       const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      
+      // Calculate relative position from center
+      const relX1 = el.x1 - centerX;
+      const relY1 = el.y1 - centerY;
+      const relX2 = el.x2 - centerX;
+      const relY2 = el.y2 - centerY;
+      
+      // Apply offset from center
+      const newX1 = centerX + relX1 + offsetX;
+      const newY1 = centerY + relY1 + offsetY;
+      const newX2 = centerX + relX2 + offsetX;
+      const newY2 = centerY + relY2 + offsetY;
       
       const newElement = {
         ...el,
         id,
-        x1: el.x1 + offsetX,
-        y1: el.y1 + offsetY,
-        x2: el.x2 + offsetX,
-        y2: el.y2 + offsetY,
+        x1: newX1,
+        y1: newY1,
+        x2: newX2,
+        y2: newY2,
       };
   
-      // Special handling for freedraw elements
       if (el.tool === 'freedraw' && el.points) {
         newElement.points = transformPoints(el.points, offsetX, offsetY);
         if (el.convexHull) {
@@ -1853,7 +1906,6 @@ export default function ExcalidrawClone() {
           };
         }
       } else {
-        // For other elements, create new rough element
         newElement.roughElement = createRoughElement(newElement);
       }
   
@@ -1878,6 +1930,17 @@ export default function ExcalidrawClone() {
           : el
       )
     );
+  };
+
+  // Clear all elements from canvas and localStorage
+  const clearCanvas = () => {
+    if (window.confirm("Are you sure you want to clear the canvas?")) {
+      setElements([]);
+      setSelectedElements([]);
+      setHistory([[]]);
+      setHistoryIndex(0);
+      localStorage.removeItem("excalidraw-data");
+    }
   };
 
   // Export to PNG
@@ -2049,6 +2112,9 @@ export default function ExcalidrawClone() {
     }
 
     if (currentTool === "select") {
+      const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+      const { x: canvasX, y: canvasY } = canvasCoords;
+
       const element = findElementsAtPosition(canvasX, canvasY)[0];
 
       if (element) {
@@ -2108,7 +2174,7 @@ export default function ExcalidrawClone() {
         y2: canvasY,
         tool: "rectangle",
         stroke: "#3d7eff",
-        strokeWidth: 1,
+        strokeWidth: 1 /zoom,
         opacity: 30,
       });
       return;
@@ -2145,12 +2211,13 @@ export default function ExcalidrawClone() {
         x2: canvasX,
         y2: canvasY,
         points: [[canvasX, canvasY]],
+        originalPoints: [[canvasX, canvasY]], // Store raw points
         tool: currentTool,
         freehandOptions: {
           size: strokeWidth,
-          thinning: freehandSettings.thinning,
-          smoothing: freehandSettings.smoothing,
-          streamline: freehandSettings.streamline,
+          thinning: e.shiftKey ? 0 : freehandSettings.thinning, // Disable thinning in precision mode
+          smoothing: e.shiftKey ? 0 : freehandSettings.smoothing, // Disable smoothing in precision mode
+          streamline: e.shiftKey ? 0 : freehandSettings.streamline, // Disable streamline in precision mode
           taperStart: freehandSettings.taperStart,
           taperEnd: freehandSettings.taperEnd,
         },
@@ -2181,7 +2248,31 @@ export default function ExcalidrawClone() {
     if (isResizing || isMoving) return;
 
     const { clientX: x, clientY: y } = e;
-
+    if (isDrawing && currentElement?.tool === "select") {
+      const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+      const { x: canvasX, y: canvasY } = canvasCoords;
+  
+      setCurrentElement(prev => ({
+        ...prev!,
+        x2: canvasX,
+        y2: canvasY
+      }));
+  
+      // Immediate visual feedback
+      renderCanvas();
+    }
+    if (currentTool === "freedraw" && isDrawing && currentElement) {
+      const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+      const { x: canvasX, y: canvasY } = canvasCoords;
+  
+      setCurrentElement(prev => ({
+        ...prev!,
+        points: [...prev!.points!, [canvasX, canvasY]],
+        originalPoints: [...prev!.originalPoints!, [canvasX, canvasY]], // Update both
+        x2: canvasX,
+        y2: canvasY,
+      }));
+    }
     if (currentTool === "pan" && isPanning) {
       const dx = x - panStart.x;
       const dy = y - panStart.y;
@@ -2299,9 +2390,7 @@ export default function ExcalidrawClone() {
         : undefined,
     };
 
-    // Calculate convex hull and bounding box for freehand elements
     if (currentTool === "freedraw" && currentElement?.points) {
-      // Only create element if we have enough points
       if (currentElement.points.length >= 2) {
         const boundingBox = calculateBoundingBox(currentElement.points);
         const elementToAdd = {
@@ -2436,6 +2525,15 @@ export default function ExcalidrawClone() {
           title="Paste"
         >
           <Copy size={20} />
+        </button>
+
+        {/* Clear All Button */}
+        <button
+          style={buttonStyle}
+          onClick={clearCanvas}
+          title="Clear Canvas"
+        >
+          <Trash2 size={20} />
         </button>
 
         {/* Color Picker */}
