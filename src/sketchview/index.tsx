@@ -67,7 +67,8 @@ type Element = {
   hachureAngle?: number;
   hachureGap?: number;
   groupIds?: string[];
-  originalOpacity?: number; // For eraser preview
+  originalOpacity?: number;
+  convexHull?: Point[];
 };
 
 const COLORS = [
@@ -224,10 +225,10 @@ const Ruler = ({ type, width, height, zoom, offset, onMouseDown }: {
   onMouseDown: (e: React.MouseEvent, type: 'horizontal' | 'vertical') => void;
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rulerSize = 30; // Size of the ruler in pixels
-  const tickSize = 10; // Length of tick marks
-  const majorTickInterval = 100; // Pixels between major ticks at zoom 1
-  const minorTickInterval = 25; // Pixels between minor ticks at zoom 1
+  const rulerSize = 30;
+  const tickSize = 10;
+  const majorTickInterval = 100;
+  const minorTickInterval = 25;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -243,7 +244,6 @@ const Ruler = ({ type, width, height, zoom, offset, onMouseDown }: {
     ctx.lineWidth = 1;
 
     if (type === 'horizontal') {
-      // Draw horizontal ruler
       const start = Math.floor(-offset.x / zoom / majorTickInterval) * majorTickInterval;
       const end = start + (width / zoom) + majorTickInterval;
 
@@ -261,7 +261,6 @@ const Ruler = ({ type, width, height, zoom, offset, onMouseDown }: {
         }
       }
     } else {
-      // Draw vertical ruler
       const start = Math.floor(-offset.y / zoom / majorTickInterval) * majorTickInterval;
       const end = start + (height / zoom) + majorTickInterval;
 
@@ -335,6 +334,62 @@ const Guides = ({ guides }: { guides: { x?: number; y?: number }[] }) => {
       ))}
     </>
   );
+};
+
+// Custom convex hull implementation (Andrew's monotone chain algorithm)
+const calculateConvexHull = (points: Point[]): Point[] => {
+  if (points.length <= 2) return points;
+
+  // Sort points lexographically (first by x, then by y)
+  points.sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
+
+  // Build lower hull
+  const lower: Point[] = [];
+  for (const point of points) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+
+  // Build upper hull
+  const upper: Point[] = [];
+  for (let i = points.length - 1; i >= 0; i--) {
+    const point = points[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+
+  // Remove duplicates
+  upper.pop();
+  lower.pop();
+
+  return [...lower, ...upper];
+};
+
+// Helper function for convex hull calculation
+const cross = (o: Point, a: Point, b: Point): number => {
+  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+};
+
+// Check if point is inside convex hull
+const isPointInConvexHull = (hull: Point[], point: Point): boolean => {
+  if (hull.length < 3) return false;
+
+  // Ray casting algorithm
+  let inside = false;
+  for (let i = 0, j = hull.length - 1; i < hull.length; j = i++) {
+    const xi = hull[i][0], yi = hull[i][1];
+    const xj = hull[j][0], yj = hull[j][1];
+    
+    const intersect = ((yi > point[1]) !== (yj > point[1])) &&
+      (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
 };
 
 export default function ExcalidrawClone() {
@@ -414,6 +469,19 @@ export default function ExcalidrawClone() {
     });
   }, []);
 
+  // Calculate convex hull for freehand elements
+  const updateConvexHulls = useCallback((elements: Element[]) => {
+    return elements.map(element => {
+      if (element.tool === 'freedraw' && element.points && element.points.length > 2) {
+        return {
+          ...element,
+          convexHull: calculateConvexHull(element.points)
+        };
+      }
+      return element;
+    });
+  }, []);
+
   // Transform points for moving elements
   const transformPoints = (points: Point[], dx: number, dy: number): Point[] => {
     return points.map(([x, y]) => [x + dx, y + dy]);
@@ -427,7 +495,7 @@ export default function ExcalidrawClone() {
       : e.clientY - rect.top;
    
     const guidePos = type === 'horizontal'
-      ? offset.x + (pos - 30) * zoom // 30 is ruler size
+      ? offset.x + (pos - 30) * zoom
       : offset.y + (pos - 30) * zoom;
    
     setGuides(prev => [...prev, type === 'horizontal' ? { x: guidePos } : { y: guidePos }]);
@@ -457,14 +525,15 @@ export default function ExcalidrawClone() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setElements(parsed);
-        setHistory([parsed]);
-        updateRTree(parsed);
+        const elementsWithHulls = updateConvexHulls(parsed);
+        setElements(elementsWithHulls);
+        setHistory([elementsWithHulls]);
+        updateRTree(elementsWithHulls);
       } catch (e) {
         console.error("Failed to parse saved data", e);
       }
     }
-  }, [updateRTree]);
+  }, [updateRTree, updateConvexHulls]);
 
   // Save to localStorage and update R-tree
   useEffect(() => {
@@ -506,13 +575,15 @@ export default function ExcalidrawClone() {
 
       conn.on("data", (data: any) => {
         if (data.type === "elements") {
-          setElements(data.elements);
-          setHistory([data.elements]);
+          const elementsWithHulls = updateConvexHulls(data.elements);
+          setElements(elementsWithHulls);
+          setHistory([elementsWithHulls]);
           setHistoryIndex(0);
-          updateRTree(data.elements);
+          updateRTree(elementsWithHulls);
         } else if (data.type === "element") {
-          setElements((prev) => [...prev, data.element]);
-          updateRTree([...elements, data.element]);
+          const elementsWithHulls = updateConvexHulls([...elements, data.element]);
+          setElements(elementsWithHulls);
+          updateRTree(elementsWithHulls);
         }
       });
     });
@@ -522,7 +593,7 @@ export default function ExcalidrawClone() {
         peerRef.current.destroy();
       }
     };
-  }, [collaborationEnabled, connectionCount, elements, updateRTree]);
+  }, [collaborationEnabled, connectionCount, elements, updateRTree, updateConvexHulls]);
 
   // Check for peer ID in URL on load
   useEffect(() => {
@@ -582,13 +653,15 @@ export default function ExcalidrawClone() {
 
     conn.on("data", (data: any) => {
       if (data.type === "elements") {
-        setElements(data.elements);
-        setHistory([data.elements]);
+        const elementsWithHulls = updateConvexHulls(data.elements);
+        setElements(elementsWithHulls);
+        setHistory([elementsWithHulls]);
         setHistoryIndex(0);
-        updateRTree(data.elements);
+        updateRTree(elementsWithHulls);
       } else if (data.type === "element") {
-        setElements((prev) => [...prev, data.element]);
-        updateRTree([...elements, data.element]);
+        const elementsWithHulls = updateConvexHulls([...elements, data.element]);
+        setElements(elementsWithHulls);
+        updateRTree(elementsWithHulls);
       }
     });
   };
@@ -615,17 +688,18 @@ export default function ExcalidrawClone() {
   // Modified setElements to auto-push to history
   const setElementsWithHistory = useCallback(
     (newElements: Element[]) => {
-      setElements(newElements);
-      updateRTree(newElements);
-      pushToHistory(newElements);
+      const elementsWithHulls = updateConvexHulls(newElements);
+      setElements(elementsWithHulls);
+      updateRTree(elementsWithHulls);
+      pushToHistory(elementsWithHulls);
       if (collaborationEnabled && connRef.current) {
         connRef.current.send({
           type: "elements",
-          elements: newElements,
+          elements: elementsWithHulls,
         });
       }
     },
-    [pushToHistory, collaborationEnabled, updateRTree]
+    [pushToHistory, collaborationEnabled, updateRTree, updateConvexHulls]
   );
 
   // Undo functionality
@@ -758,10 +832,16 @@ export default function ExcalidrawClone() {
     }
   };
 
-  // Improved freehand selection detection
+  // Improved freehand selection detection using convex hull
   const isPointInFreehand = (element: Element, x: number, y: number) => {
     if (!element.points || element.points.length < 2) return false;
-
+    
+    // Use convex hull for precise hit detection
+    if (element.convexHull && element.convexHull.length > 2) {
+      return isPointInConvexHull(element.convexHull, [x, y]);
+    }
+    
+    // Fallback to perfect-freehand's path if no convex hull
     const canvas = canvasRef.current;
     if (!canvas) return false;
 
@@ -769,13 +849,10 @@ export default function ExcalidrawClone() {
     const pathData = PerfectFreehand.getStroke(element.points, {
       size: element.strokeWidth || strokeWidth,
       thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
-      smoothing:
-        element.freehandOptions?.smoothing || freehandSettings.smoothing,
-      streamline:
-        element.freehandOptions?.streamline || freehandSettings.streamline,
+      smoothing: element.freehandOptions?.smoothing || freehandSettings.smoothing,
+      streamline: element.freehandOptions?.streamline || freehandSettings.streamline,
       start: {
-        taper:
-          element.freehandOptions?.taperStart || freehandSettings.taperStart,
+        taper: element.freehandOptions?.taperStart || freehandSettings.taperStart,
         cap: true,
       },
       end: {
@@ -822,8 +899,9 @@ export default function ExcalidrawClone() {
     }
   };
 
-  // Find elements at point using RBush
+  // Find elements at point using RBush for broad-phase detection
   const findElementsAtPosition = (x: number, y: number) => {
+    // First use RBush for broad-phase detection
     const results = rtreeRef.current.search({
       minX: x,
       minY: y,
@@ -831,6 +909,7 @@ export default function ExcalidrawClone() {
       maxY: y
     });
 
+    // Then perform precise hit detection on candidate elements
     return results
       .map(result => elements.find(el => el.id === result.id))
       .filter(el => el && isPointInElement(el, x, y)) as Element[];
@@ -863,13 +942,10 @@ export default function ExcalidrawClone() {
     const pathData = PerfectFreehand.getStroke(element.points, {
       size: element.strokeWidth || strokeWidth,
       thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
-      smoothing:
-        element.freehandOptions?.smoothing || freehandSettings.smoothing,
-      streamline:
-        element.freehandOptions?.streamline || freehandSettings.streamline,
+      smoothing: element.freehandOptions?.smoothing || freehandSettings.smoothing,
+      streamline: element.freehandOptions?.streamline || freehandSettings.streamline,
       start: {
-        taper:
-          element.freehandOptions?.taperStart || freehandSettings.taperStart,
+        taper: element.freehandOptions?.taperStart || freehandSettings.taperStart,
         cap: true,
       },
       end: {
@@ -911,7 +987,7 @@ export default function ExcalidrawClone() {
     ctx.fillText(element.text || "", element.x1, element.y1 + 16);
   };
 
-  // Render selection box and handles
+  // Render selection box and handles with convex hull visualization for freehand
   const renderSelection = (element: Element) => {
     if (!selectedElements.some((el) => el.id === element.id)) return;
 
@@ -919,6 +995,26 @@ export default function ExcalidrawClone() {
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d")!;
+    ctx.save();
+    ctx.translate(offset.x, offset.y);
+    ctx.scale(zoom, zoom);
+
+    // For freehand elements, show convex hull visualization
+    if (element.tool === 'freedraw' && element.convexHull && element.convexHull.length > 2) {
+      ctx.strokeStyle = "rgba(61, 126, 255, 0.5)";
+      ctx.lineWidth = 1 / zoom;
+      ctx.setLineDash([5, 5]);
+      
+      ctx.beginPath();
+      ctx.moveTo(element.convexHull[0][0], element.convexHull[0][1]);
+      for (let i = 1; i < element.convexHull.length; i++) {
+        ctx.lineTo(element.convexHull[i][0], element.convexHull[i][1]);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     const padding = 8;
     const minX = Math.min(element.x1, element.x2) - padding;
     const maxX = Math.max(element.x1, element.x2) + padding;
@@ -951,6 +1047,8 @@ export default function ExcalidrawClone() {
       ctx.arc(handle.x, handle.y, handleSize, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    ctx.restore();
   };
 
   // Render region selection (blue rectangle)
@@ -1038,7 +1136,6 @@ export default function ExcalidrawClone() {
 
     setElements((prev) =>
       prev.map((el) => {
-        // Handle grouped elements
         if (
           resizeElement.groupIds &&
           resizeElement.groupIds.length > 0 &&
@@ -1053,7 +1150,6 @@ export default function ExcalidrawClone() {
           let newX2 = el.x2;
           let newY2 = el.y2;
 
-          // Calculate scale factors
           let scaleX = 1;
           let scaleY = 1;
 
@@ -1100,13 +1196,12 @@ export default function ExcalidrawClone() {
               break;
           }
 
-          // Calculate new positions for grouped elements
           const relativeX1 = (el.x1 - resizeElement.x1) * scaleX;
           const relativeY1 = (el.y1 - resizeElement.y1) * scaleY;
           const relativeX2 = (el.x2 - resizeElement.x1) * scaleX;
           const relativeY2 = (el.y2 - resizeElement.y1) * scaleY;
 
-          return {
+          const updatedElement = {
             ...el,
             x1: resizeElement.x1 + relativeX1,
             y1: resizeElement.y1 + relativeY1,
@@ -1128,6 +1223,21 @@ export default function ExcalidrawClone() {
                 })
               : undefined,
           };
+
+          // Update convex hull for freehand elements
+          if (el.tool === 'freedraw' && el.points) {
+            const scaledPoints = el.points.map(([px, py]) => {
+              const relativeX = (px - el.x1) * scaleX;
+              const relativeY = (py - el.y1) * scaleY;
+              return [updatedElement.x1 + relativeX, updatedElement.y1 + relativeY] as Point;
+            });
+            updatedElement.points = scaledPoints;
+            if (scaledPoints.length > 2) {
+              updatedElement.convexHull = calculateConvexHull(scaledPoints);
+            }
+          }
+
+          return updatedElement;
         }
 
         if (el.id === resizeElement.id) {
@@ -1167,33 +1277,7 @@ export default function ExcalidrawClone() {
               break;
           }
 
-          if (el.tool === "freedraw" && el.points) {
-            const originalWidth = Math.abs(el.x2 - el.x1);
-            const originalHeight = Math.abs(el.y2 - el.y1);
-            const newWidth = Math.abs(newX2 - newX1);
-            const newHeight = Math.abs(newY2 - newY1);
-
-            const scaleX = originalWidth !== 0 ? newWidth / originalWidth : 1;
-            const scaleY =
-              originalHeight !== 0 ? newHeight / originalHeight : 1;
-
-            const scaledPoints = el.points.map(([px, py]) => {
-              const relativeX = (px - el.x1) * scaleX;
-              const relativeY = (py - el.y1) * scaleY;
-              return [newX1 + relativeX, newY1 + relativeY] as Point;
-            });
-
-            return {
-              ...el,
-              x1: newX1,
-              y1: newY1,
-              x2: newX2,
-              y2: newY2,
-              points: scaledPoints,
-            };
-          }
-
-          return {
+          const updatedElement = {
             ...el,
             x1: newX1,
             y1: newY1,
@@ -1215,6 +1299,30 @@ export default function ExcalidrawClone() {
                 })
               : undefined,
           };
+
+          if (el.tool === "freedraw" && el.points) {
+            const originalWidth = Math.abs(el.x2 - el.x1);
+            const originalHeight = Math.abs(el.y2 - el.y1);
+            const newWidth = Math.abs(newX2 - newX1);
+            const newHeight = Math.abs(newY2 - newY1);
+
+            const scaleX = originalWidth !== 0 ? newWidth / originalWidth : 1;
+            const scaleY =
+              originalHeight !== 0 ? newHeight / originalHeight : 1;
+
+            const scaledPoints = el.points.map(([px, py]) => {
+              const relativeX = (px - el.x1) * scaleX;
+              const relativeY = (py - el.y1) * scaleY;
+              return [newX1 + relativeX, newY1 + relativeY] as Point;
+            });
+
+            updatedElement.points = scaledPoints;
+            if (scaledPoints.length > 2) {
+              updatedElement.convexHull = calculateConvexHull(scaledPoints);
+            }
+          }
+
+          return updatedElement;
         }
         return el;
       })
@@ -1246,7 +1354,6 @@ export default function ExcalidrawClone() {
     const dy = (e.clientY - moveStart.y) / zoom;
  
     setElements(prev => prev.map(el => {
-      // Check if element is selected or in a selected group
       const isSelected = selectedElements.some(sel => sel.id === el.id);
       const isInGroup = selectedElements.some(sel => 
         sel.groupIds && el.groupIds && 
@@ -1254,44 +1361,38 @@ export default function ExcalidrawClone() {
       );
  
       if (isSelected || isInGroup) {
-        // Handle movement differently based on element type
+        const updatedElement = {
+          ...el,
+          x1: el.x1 + dx,
+          y1: el.y1 + dy,
+          x2: el.x2 + dx,
+          y2: el.y2 + dy,
+          roughElement: [
+            "rectangle",
+            "ellipse",
+            "line",
+            "arrow",
+            "diamond",
+          ].includes(el.tool)
+            ? createRoughElement({
+                ...el,
+                x1: el.x1 + dx,
+                y1: el.y1 + dy,
+                x2: el.x2 + dx,
+                y2: el.y2 + dy
+              })
+            : undefined,
+        };
+
         if (el.tool === 'freedraw') {
-          // Move all points in freehand drawing
-          const movedPoints = el.points?.map(([x, y]) => [x + dx, y + dy] as Point);
-          return {
-            ...el,
-            points: transformPoints(el.points || [], dx, dy),
-            x1: (el.x1 || 0) + dx,
-            y1: (el.y1 || 0) + dy,
-            x2: (el.x2 || 0) + dx,
-            y2: (el.y2 || 0) + dy
-          };
-        } else if (el.tool === 'text') {
-          // Move text element
-          return {
-            ...el,
-            x1: el.x1 + dx,
-            y1: el.y1 + dy,
-            x2: el.x2 + dx,
-            y2: el.y2 + dy
-          };
-        } else {
-          // Move other elements (rectangle, ellipse, etc.)
-          return {
-            ...el,
-            x1: el.x1 + dx,
-            y1: el.y1 + dy,
-            x2: el.x2 + dx,
-            y2: el.y2 + dy,
-            roughElement: createRoughElement({
-              ...el,
-              x1: el.x1 + dx,
-              y1: el.y1 + dy,
-              x2: el.x2 + dx,
-              y2: el.y2 + dy
-            })
-          };
+          const movedPoints = transformPoints(el.points || [], dx, dy);
+          updatedElement.points = movedPoints;
+          if (movedPoints.length > 2) {
+            updatedElement.convexHull = calculateConvexHull(movedPoints);
+          }
         }
+
+        return updatedElement;
       }
       return el;
     }));
@@ -1305,17 +1406,17 @@ export default function ExcalidrawClone() {
     pushToHistory(elements);
   };
 
-  // Handle eraser mouse down
+  // Handle eraser mouse down with RBush filtering and opacity decay
   const handleEraserMouseDown = (x: number, y: number) => {
     const canvasCoords = screenToCanvas(x, y);
     const { x: canvasX, y: canvasY } = canvasCoords;
 
-    // Find elements at this position
+    // Find elements at this position using RBush for broad-phase detection
     const elementsAtPos = findElementsAtPosition(canvasX, canvasY);
     
     if (elementsAtPos.length > 0) {
       setIsErasing(true);
-      // Store original opacity and reduce opacity by half for preview
+      // Store original opacity and reduce opacity by half for visual feedback
       setElementsToErase(elementsAtPos);
       setElements(prev => prev.map(el => {
         if (elementsAtPos.some(e => e.id === el.id)) {
@@ -1330,17 +1431,17 @@ export default function ExcalidrawClone() {
     }
   };
 
-  // Handle eraser mouse move
+  // Handle eraser mouse move with RBush filtering
   const handleEraserMouseMove = (x: number, y: number) => {
     if (!isErasing) return;
     
     const canvasCoords = screenToCanvas(x, y);
     const { x: canvasX, y: canvasY } = canvasCoords;
 
-    // Find elements at this position
+    // Find elements at this position using RBush for broad-phase detection
     const elementsAtPos = findElementsAtPosition(canvasX, canvasY);
     
-    // Add new elements to erase list and reduce their opacity
+    // Add new elements to erase list and reduce their opacity for visual feedback
     const newElementsToErase = [...new Set([...elementsToErase, ...elementsAtPos])];
     setElementsToErase(newElementsToErase);
     
@@ -1356,7 +1457,7 @@ export default function ExcalidrawClone() {
     }));
   };
 
-  // Handle eraser mouse up
+  // Handle eraser mouse up with final deletion
   const handleEraserMouseUp = () => {
     if (!isErasing) return;
     
@@ -1496,7 +1597,6 @@ export default function ExcalidrawClone() {
     ctx.translate(offset.x, offset.y);
     ctx.scale(zoom, zoom);
 
-    // Render all elements except those being erased (they'll be rendered with reduced opacity)
     elements.forEach((element) => {
       ctx.globalAlpha = (element.opacity || opacity) / 100;
 
@@ -1531,7 +1631,6 @@ export default function ExcalidrawClone() {
       renderSelection(element);
     });
 
-    // Render current element (if drawing)
     if (currentElement) {
       ctx.globalAlpha = (currentElement.opacity || opacity) / 100;
 
@@ -1564,7 +1663,6 @@ export default function ExcalidrawClone() {
 
     ctx.restore();
 
-    // Render region selection (blue rectangle)
     renderRegionSelection();
 
     renderPreview();
@@ -1667,7 +1765,7 @@ export default function ExcalidrawClone() {
     setCopiedElements(selectedElements);
   };
 
-  // Paste elements
+  // Paste elements with AABB transforms and convex hull preservation
   const pasteElements = () => {
     if (copiedElements.length === 0) return;
 
@@ -1676,7 +1774,8 @@ export default function ExcalidrawClone() {
     const newElements = copiedElements.map((el) => {
       const id =
         Date.now().toString() + Math.random().toString(36).substr(2, 9);
-      return {
+      
+      const newElement = {
         ...el,
         id,
         x1: el.x1 + offsetX,
@@ -1699,6 +1798,16 @@ export default function ExcalidrawClone() {
             })
           : undefined,
       };
+
+      // Handle freehand elements with convex hull
+      if (el.tool === 'freedraw' && el.points) {
+        newElement.points = transformPoints(el.points, offsetX, offsetY);
+        if (el.convexHull) {
+          newElement.convexHull = transformPoints(el.convexHull, offsetX, offsetY);
+        }
+      }
+
+      return newElement;
     });
 
     setElementsWithHistory([...elements, ...newElements]);
@@ -1890,9 +1999,7 @@ export default function ExcalidrawClone() {
     }
 
     if (currentTool === "select") {
-      const element = elements.find((el) =>
-        isPointInElement(el, canvasX, canvasY)
-      );
+      const element = findElementsAtPosition(canvasX, canvasY)[0];
 
       if (element) {
         if (element.tool === "text") {
@@ -1915,15 +2022,13 @@ export default function ExcalidrawClone() {
                     !(
                       element.groupIds &&
                       element.groupIds.some((id) => sel.groupIds?.includes(id))
-                    )
+              ) 
               ) : [...prev, element];
           } else {
             if (isAlreadySelected) {
-              // If already selected, allow moving
               startMoving(e);
               return prev;
             } else {
-              // Select all elements in the same group if any
               const groupElements = element.groupIds?.length
                 ? elements.filter((el) =>
                     el.groupIds?.some((id) => element.groupIds?.includes(id))
@@ -2089,7 +2194,6 @@ export default function ExcalidrawClone() {
     if (!isDrawing || !currentElement) return;
 
     if (currentTool === "select" && currentElement.tool === "rectangle") {
-      // Find elements in the selection rectangle using RBush
       const minX = Math.min(currentElement.x1, currentElement.x2);
       const maxX = Math.max(currentElement.x1, currentElement.x2);
       const minY = Math.min(currentElement.y1, currentElement.y2);
@@ -2144,6 +2248,11 @@ export default function ExcalidrawClone() {
         ? createRoughElement(currentElement)
         : undefined,
     };
+
+    // Calculate convex hull for freehand elements
+    if (currentTool === "freedraw" && elementToAdd.points && elementToAdd.points.length > 2) {
+      elementToAdd.convexHull = calculateConvexHull(elementToAdd.points);
+    }
 
     setElementsWithHistory([...elements, elementToAdd]);
     setIsDrawing(false);
