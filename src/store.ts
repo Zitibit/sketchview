@@ -81,6 +81,8 @@ const useStore = create<StoreState>((set) => ({
     setRemotePeerId: (remotePeerId) => set({ remotePeerId }),
     collaborationEnabled: false,
     setCollaborationEnabled: (collaborationEnabled) => set({ collaborationEnabled }),
+    showRuler: false,
+    setShowRuler: (showRuler: boolean) => set({ showRuler }),
 }));
 
 export default useStore;

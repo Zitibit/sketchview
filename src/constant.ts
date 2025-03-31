@@ -11,11 +11,12 @@ export const COLORS = [
   "#9900ff",
 ];
 export const STROKE_COLORS = [
+  "transparent",
   "#000000",
-  "#ff0000",
-  "#00ff00",
-  "#0000ff",
-  "#ffff00",
+  "#F44336",
+  "#4CAF50",
+  "#3F51B5",
+  "#FF9800",
 ];
 
 export const FILL_COLORS = [

@@ -39,8 +39,11 @@ const Footer = ({
     setGridSize,
     gridContrast,
     setGridContrast,
+    showPreview,
+    setShowPreview,
+    showRuler,
+    setShowRuler
   } = useStore();
-  console.log("hello");
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Delete" && selectedElements.length > 0) {
@@ -67,7 +70,7 @@ const Footer = ({
   return (
     <footer className="footer">
       <div className="footer__left">
-        <div className="footer__left__item">
+        {/* <div className="footer__left__item">
           <span style={{ fontSize: "14px" }}>Size:</span>
           <input
             type="range"
@@ -94,7 +97,7 @@ const Footer = ({
           <span style={{ width: "30px", textAlign: "right" }}>
             {gridContrast.toFixed(1)}
           </span>
-        </div>
+        </div> */}
         <div className="footer__left__item">
           <Checkbox.Root
             checked={showGrid}
@@ -103,11 +106,45 @@ const Footer = ({
           >
             <Checkbox.Control className="checkbox-control">
               <Checkbox.Indicator className="checkbox-indicator">
-                <Check className="check-icon" strokeWidth={1} />
+                <Check className="check-icon" size={14} strokeWidth={1} />
               </Checkbox.Indicator>
             </Checkbox.Control>
             <Checkbox.Label className="checkbox-label">
-              Show Grid
+              Grid
+            </Checkbox.Label>
+            <Checkbox.HiddenInput />
+          </Checkbox.Root>
+        </div>
+        <div className="footer__left__item">
+          <Checkbox.Root
+            checked={showPreview}
+            onCheckedChange={(details) => setShowPreview(!!details.checked)}
+            className="checkbox-root"
+          >
+            <Checkbox.Control className="checkbox-control">
+              <Checkbox.Indicator className="checkbox-indicator">
+                <Check className="check-icon" size={14} strokeWidth={1} />
+              </Checkbox.Indicator>
+            </Checkbox.Control>
+            <Checkbox.Label className="checkbox-label">
+              Preview
+            </Checkbox.Label>
+            <Checkbox.HiddenInput />
+          </Checkbox.Root>
+        </div>
+        <div className="footer__left__item">
+          <Checkbox.Root
+            checked={showRuler}
+            onCheckedChange={(details) => setShowRuler(!!details.checked)}
+            className="checkbox-root"
+          >
+            <Checkbox.Control className="checkbox-control">
+              <Checkbox.Indicator className="checkbox-indicator">
+                <Check className="check-icon" size={14} strokeWidth={1} />
+              </Checkbox.Indicator>
+            </Checkbox.Control>
+            <Checkbox.Label className="checkbox-label">
+              Ruler
             </Checkbox.Label>
             <Checkbox.HiddenInput />
           </Checkbox.Root>
@@ -124,7 +161,7 @@ const Footer = ({
             onClick={undo}
             title="Delete Selected"
           >
-            <Undo2 size={25} strokeWidth={1} />
+            <Undo2 size={20} strokeWidth={1} />
           </div>
           <div
             className={
@@ -135,7 +172,7 @@ const Footer = ({
             onClick={deleteSelected}
             title="Delete Selected"
           >
-            <Trash2 size={25} strokeWidth={1} />
+            <Trash2 size={20} strokeWidth={1} />
           </div>
 
           <div
@@ -147,7 +184,7 @@ const Footer = ({
             onClick={copySelected}
             title="Copy Selected"
           >
-            <Clipboard size={25} strokeWidth={1} />
+            <Clipboard size={20} strokeWidth={1} />
           </div>
 
           <div
@@ -159,11 +196,11 @@ const Footer = ({
             onClick={pasteElements}
             title="Paste"
           >
-            <Copy size={25} strokeWidth={1} />
+            <Copy size={20} strokeWidth={1} />
           </div>
 
           <div className={"iconbox"} onClick={clearAll} title="Clear All">
-            <X size={25} strokeWidth={1} />
+            Clear Canvas
           </div>
           <div
             className={
@@ -174,7 +211,7 @@ const Footer = ({
             onClick={redo}
             title="Delete Selected"
           >
-            <Redo2 size={25} strokeWidth={1} />
+            <Redo2 size={20} strokeWidth={1} />
           </div>
         </div>
       </div>

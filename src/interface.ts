@@ -127,4 +127,6 @@ export interface StoreState {
     setRemotePeerId: (remotePeerId: string) => void;
     collaborationEnabled: boolean;
     setCollaborationEnabled: (enabled: boolean) => void;
+    showRuler: boolean;
+    setShowRuler: (enabled: boolean) => void;
 }

@@ -2,8 +2,10 @@ import type { AppProps } from "next/app";
 import Header from "@/src/components/Header";
 
 import "@/styles/global.css";
+import "@/styles/popover.css";
 import "@radix-ui/themes/styles.css";
 import { Theme } from "@radix-ui/themes";
+
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   return (

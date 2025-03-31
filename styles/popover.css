@@ -1,0 +1,85 @@
+/* Popover Trigger */
+[data-part="trigger"] {
+    background-color: transparent;
+    color: white;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.3s ease;
+  }
+  
+  [data-part="trigger"]:hover {
+    background-color: transparent;
+  }
+  
+  /* Popover Positioner */
+  [data-part="positioner"] {
+    position: relative;
+    z-index: 1000;
+  }
+  
+  /* Popover Content */
+  [data-part="content"] {
+    background: white;
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.15);
+    width: 250px;
+    border: 1px solid #ddd;
+    animation: fadeIn 0.2s ease-in-out;
+    position: relative;
+  }
+  
+  /* Popover Title */
+  [data-part="title"] {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 4px;
+  }
+  
+  /* Popover Description */
+  [data-part="description"] {
+    font-size: 14px;
+    color: #555;
+    margin-bottom: 10px;
+  }
+  
+  /* Popover Close Button */
+  [data-part="close-trigger"] {
+    background-color: #ff4d4f;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+  }
+  
+  [data-part="close-trigger"]:hover {
+    background-color: #d9363e;
+  }
+  
+  /* Popover Arrow (Chevron Top) */
+  [data-part="content"]::before {
+    content: "";
+    position: absolute;
+    top: -10px; /* Adjust to move the arrow closer/farther */
+    right: 6%;
+    transform: translateX(-50%);
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 10px solid white; /* Same color as popover */
+  }
+  
+  /* Arrow Shadow for better visibility */
+  [data-part="content"]::after {
+    content: "";
+    position: absolute;
+    top: -12px; /* Slightly above the arrow */
+    right: 4%;
+    transform: translateX(-50%);
+    border-left: 12px solid transparent;
+    border-right: 12px solid transparent;
+    border-bottom: 12px solid rgba(0, 0, 0, 0.1); /* Shadow color */
+  }
+  

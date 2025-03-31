@@ -12,10 +12,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  devIndicators: {
-    buildActivity: false,
-    buildActivityPosition: 'bottom-right', // Optional: Move it instead of hiding
-  },
+  
   webpack: (config: {
     module: { rules: { test: RegExp; include: RegExp; type: string }[] };
   }) => {

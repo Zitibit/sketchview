@@ -1,3 +1,4 @@
+/* //Base color theme - https://colorhunt.co/palette/f8f5e99dc08b3a7d44df6d14 */
 /* http://meyerweb.com/eric/tools/css/reset/ 
    v2.0 | 20110126
    License: none (public domain)
@@ -137,7 +138,7 @@ table {
 /* Apply Lato font globally */
 body {
 	/* font-family: "Lato", sans-serif; */
-	font-family: "Teachers", sans-serif !important;
+	font-family: "Lato", sans-serif !important;
 	font-optical-sizing: auto;
 	font-weight: 300;
 	font-style: normal;
@@ -146,7 +147,7 @@ body {
 }
 
 .radix-themes {
-	font-family: "Teachers", sans-serif !important;
+	font-family: "Lato", sans-serif !important;
 }
 
 .headerContainer {
@@ -168,9 +169,9 @@ body {
 	text-decoration: none;
 	font-weight: 500;
 	font-style: normal;
-	font-size: 32px;
+	font-size: 40px;
 	color: #000;
-	font-family: "Audiowide", sans-serif !important;
+	font-family: "Cagliostro", sans-serif !important;
 	font-optical-sizing: auto;
 	font-style: normal;
 	font-variation-settings:
@@ -179,15 +180,15 @@ body {
 
 .leftToolBar {
 	display: flex;
-	width: 220px;
+	width: 180px;
 	justify-content: space-between;
 	align-items: center;
 	flex-direction: column;
-	box-shadow: rgba(0, 0, 0, 0.15) 0px 5px 15px 0px;
+	box-shadow: rgb(244 245 236) 0px 6px 24px 0px, rgb(214 226 202) 0px 0px 0px 1px;
 	position: absolute;
-	left: 10px;
+	left: 20px;
 	z-index: 1;
-	background: #fff;
+	background: #f8f5e980;
 	top: 80px;
 	padding: 16px 12px;
 	height: auto;
@@ -197,13 +198,14 @@ body {
 
 .leftToolBar button {
 	border: none;
-	background: #fff;
+	background: #9dc08b14;
 	display: flex;
 	justify-content: center;
 	flex-direction: column;
 	align-items: center;
 	padding: 4px;
 	border-radius: 6px;
+	font-family: 'Lato';
 }
 
 .toggleButton {
@@ -226,8 +228,12 @@ body {
 	width: 100%;
 	flex-direction: column;
 	margin-bottom: 16px;
-	padding-bottom: 16px;
-	border-bottom: 1px solid #eee;
+	/* padding-bottom: 16px; */
+}
+.leftToolBar__section:last-child{
+	border-bottom: 0px;
+	margin-bottom: 0;
+	padding-bottom: 0;
 }
 
 .leftToolBar__section__title {
@@ -242,8 +248,7 @@ body {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
 	/* 3 items per row */
-	gap: 10px;
-	/* Adjust spacing */
+	gap: 8px;
 }
 input[type="range"] {
 	-webkit-appearance: none;
@@ -251,7 +256,7 @@ input[type="range"] {
 	appearance: none;
 	width: 100%;
 	height: 2px;
-	background: linear-gradient(to right, #000, #000);
+	background: linear-gradient(to right, #E91E63, #3F51B5);
 	/* Green gradient */
 	border-radius: 5px;
 	outline: none;
@@ -285,7 +290,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .activeButtonStyle {
-	background: #f1ecea !important;
+	/* background: #FFEB3B !important;
+	background: linear-gradient(to right, #e91e6317, #3f51b53b) !important; */
+	background: #9dc08b66 !important;
+    border: 1px solid #9DC08B !important;
 }
 
 .toptoolbarWrapper{
@@ -308,6 +316,7 @@ input[type="range"]::-moz-range-thumb {
     gap: 12px;
     align-items: center;
     justify-content: center;
+	padding: 0 20px;
 }
 .iconbox{
 	width: 100%;
@@ -317,7 +326,8 @@ input[type="range"]::-moz-range-thumb {
     justify-content: center;
     cursor: pointer;
     color: #000;
-    border: 1px solid #000;
+    /* border: 1px solid #000; */
+	/* box-shadow: rgba(0, 0, 0, 0.05) 0px 6px 24px 0px, rgba(0, 0, 0, 0.08) 0px 0px 0px 1px; */
     margin: 0;
     padding: 6px;
     font-size: 14px;
@@ -325,12 +335,15 @@ input[type="range"]::-moz-range-thumb {
     transition: all 0.3s ease;
     border-radius: 4px;
     white-space: nowrap;
+	background: #9dc08b14;
+    border: 1px solid #9dc08b14 !important;
 }
 .iconbox:hover{
-	background: #eee;
+	background: #9dc08b66 !important;
+    border: 1px solid #9DC08B !important;
 }
 .editActions .iconbox{
-	height: 24px;
+	height: 18px;
 }
 
 .previewSection{
@@ -351,9 +364,10 @@ input[type="range"]::-moz-range-thumb {
 	position: absolute;
 	bottom: 0px;
 	z-index: 10;
-	background: #ffffffd6;
+	background: #fbfaf4;
 	border-radius: 8px;
-	padding: 8px;
+	padding: 0 8px;
+	height: 40px;
 	display: flex;
 	gap: 8px;
 	align-items: center;
@@ -392,12 +406,13 @@ input[type="range"]::-moz-range-thumb {
 	align-items: center;
 	gap: 10px;
 	margin-right: 20px;
+	font-size: 14px;
 }
 
 .reset-zoom-button {
 	color: #000;
-	border: 2px solid #000;
-	padding: 8px 12px;
+	border: 1px solid #000;
+	padding: 4px 6px;
 	font-size: 14px;
 	cursor: pointer;
 	transition: all 0.3s ease;
@@ -408,7 +423,7 @@ input[type="range"]::-moz-range-thumb {
   .reset-zoom-button:hover {
 	background-color: white;
 	color: black;
-	border: 2px solid black;
+	border: 1px solid black;
   }
 
   .reset-zoom-button:disabled {
@@ -430,9 +445,9 @@ input[type="range"]::-moz-range-thumb {
   }
   
   .checkbox-control {
-	width: 20px;
-	height: 20px;
-	border: 2px solid black;
+	width: 16px;
+	height: 16px;
+	border: 1px solid #3A7D44;
 	border-radius: 4px;
 	display: flex;
 	align-items: center;
@@ -442,8 +457,8 @@ input[type="range"]::-moz-range-thumb {
   }
   
   .checkbox-root[data-state="checked"] .checkbox-control {
-	background-color: black;
-	border-color: black;
+	background-color: #3A7D44;
+    border-color: #3A7D44;
   }
   
   .checkbox-indicator {
@@ -461,6 +476,7 @@ input[type="range"]::-moz-range-thumb {
   
   .checkbox-label {
 	color: black;
+	font-size: 14px;
   }
   .footer__left{
 	display: flex;
@@ -475,3 +491,218 @@ input[type="range"]::-moz-range-thumb {
     justify-content: center;
     align-items: center;
   }
+
+
+/* CSS */
+.shareIcon {
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-decoration: none;
+  color: #000;
+  cursor: pointer;
+  border: 3px solid;
+  padding: 0.25em 0.5em;
+  box-shadow: 1px 1px 0px 0px, 2px 2px 0px 0px, 3px 3px 0px 0px, 4px 4px 0px 0px, 5px 5px 0px 0px;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.shareIcon:active {
+  box-shadow: 0px 0px 0px 0px;
+  top: 5px;
+  left: 5px;
+}
+.rangeContainer{
+	display: flex;
+	gap: 8px;
+	flex-direction: column;
+	width: 100%;
+}
+
+.settingsGroup{
+	display: flex;
+	width: 100%;
+	flex-direction: column;
+	margin-bottom: 16px;
+}
+.settingsGroup__title,
+.rangeContainer__title{
+	font-size: 14px;
+	font-weight: 500;
+	color: #000;
+}
+.settingsGroup__title{
+	font-size: 16px;
+	text-decoration: underline;
+	font-weight: 600;
+}
+.settingsGroup__actionList{
+	margin-top: 8px;
+}
+.settingsGroup__actionList li{
+	margin-bottom: 12px;
+}
+.rangeContainer__action{
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+
+.toggle-switch {
+	position: relative;
+	display: inline-block;
+	width: 50px;
+	height: 25px;
+  }
+  
+  .toggle-switch input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+  }
+  
+  .slider {
+	position: absolute;
+	cursor: pointer;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #ccc;
+	transition: 0.3s;
+	border-radius: 25px;
+  }
+  
+  .slider:before {
+	content: "";
+	position: absolute;
+	height: 18px;
+	width: 18px;
+	left: 4px;
+	bottom: 3.5px;
+	background-color: white;
+	transition: 0.3s;
+	border-radius: 50%;
+  }
+  
+  input:checked + .slider {
+	background-color: #4CAF50;
+  }
+  
+  input:checked + .slider:before {
+	transform: translateX(24px);
+  }
+
+  .collaborationWrapper {
+	border-radius: 8px;
+  }
+  
+  .collaborationIntro {
+	text-align: center;
+  }
+  .collaborationIntro__title,
+  .collaborationContainer__title{
+	font-size: 16px;
+    font-weight: 700;
+    color: #000;
+  }
+  .collaborationIntro__message,
+  .collaborationContainer__message{
+	font-size: 14px;
+    color: #000;
+    margin: 12px 0;
+  }
+  .collaborationContainer__message strong{
+	color: #007bff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  
+  .startSessionButton {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	background: #007bff;
+	color: white;
+	border: none;
+	padding: 8px 12px;
+	border-radius: 5px;
+	cursor: pointer;
+	width: 100%;
+	justify-content: center;
+  }
+  
+  .collaborationContainer h4 {
+	margin-bottom: 8px;
+  }
+  
+  .shareUrlContainer {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+  }
+  
+  .activeConnections {
+	font-size: 12px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+  }
+  
+
+  /* 🔹 Input Fields */
+input[type="text"] {
+	width: 96%;
+	padding: 8px;
+	font-size: 14px;
+	border: 1px solid #ccc;
+	border-radius: 5px;
+	outline: none;
+	transition: border-color 0.2s ease-in-out;
+  }
+  
+  /* 🔹 Focus effect */
+  input[type="text"]:focus {
+	border-color: #007bff;
+	box-shadow: 0 0 5px rgba(0, 123, 255, 0.2);
+  }
+  
+  /* 🔹 Disabled input */
+  input[type="text"]:disabled {
+	background: #f0f0f0;
+	cursor: not-allowed;
+  }
+  
+  /* 🔹 Share URL container */
+  .shareUrlContainer {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+  }
+  
+  .shareUrlContainer input {
+	flex: 1;
+  }
+  
+  /* 🔹 Copy button */
+  .shareUrlContainer button {
+	background: #007bff;
+	border: none;
+	color: white;
+	padding: 6px;
+	border-radius: 5px;
+	cursor: pointer;
+	transition: background 0.2s;
+  }
+  
+  .shareUrlContainer button:hover {
+	background: #0056b3;
+  }
+  

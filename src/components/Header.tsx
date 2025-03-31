@@ -12,8 +12,8 @@ export default function Header({ menu, children }: MenuProps) {
     <header className="headerContainer">
       <div className="header">
         {/* Tab-based Navigation */}
-        <div className="header__item header__item__brand">
-          <Link key={"section1"} href={`/`} passHref>
+        <div className="header__item header__item__brand box">
+          <Link key={"section1"} href={`/`} passHref className="sketchview">
             sketchview
           </Link>
         </div>

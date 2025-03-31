@@ -14,6 +14,7 @@ import {
 import TOOLS from "./Tools";
 import { COLORS, STROKE_COLORS, FILL_COLORS } from "../constant";
 import useStore from "../store";
+import { useState } from "react";
 
 // Render tool-specific settings
 const renderToolSettings = () => {
@@ -206,8 +207,9 @@ const LeftToolBar = ({
   fillColor,
   setFillColor,
   leftSidebarOpen,
-  setLeftSidebarOpen
+  setLeftSidebarOpen,
 }) => {
+  const [showAdvancedSettings, setshowAdvancedSettings] = useState(false);
   return (
     <aside className="leftToolBar">
       {/* <div className="leftToolBar__toggle">
@@ -224,7 +226,7 @@ const LeftToolBar = ({
         </button>
       </div> */}
       <div className="leftToolBar__section">
-        <div className="leftToolBar__section__title">Tools</div>
+        {/* <div className="leftToolBar__section__title">Tools</div> */}
         <div className="leftToolBar__section__tools leftToolBar__section__tools--selectors">
           {TOOLS.map(({ icon, tool, title }) => (
             <button
@@ -243,10 +245,10 @@ const LeftToolBar = ({
       </div>
 
       <div className="leftToolBar__section">
-        <div className="leftToolBar__section__title">Fill</div>
+        <div className="leftToolBar__section__title">Background Fill</div>
         <div className="leftToolBar__section__tools">
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ display: "flex", gap: "4px" }}>
+            <div style={{ display: "flex", gap: "8px" }}>
               {FILL_COLORS.map((c) => (
                 <button
                   key={c}
@@ -258,7 +260,7 @@ const LeftToolBar = ({
                         ? "repeating-conic-gradient(#ddd 0% 25%, white 0% 50%) 50% / 20px 20px"
                         : c,
                     border:
-                      fillColor === c ? "2px solid #3d7eff" : "1px solid #ddd",
+                      fillColor === c ? "1px solid #3d7eff" : "1px solid #ddd",
                     borderRadius: "4px",
                     cursor: "pointer",
                   }}
@@ -274,26 +276,51 @@ const LeftToolBar = ({
         <div className="leftToolBar__section__title">Stroke</div>
         <div className="leftToolBar__section__tools">
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              title="Stroke Color"
-            />
+            <div style={{ display: "flex", gap: "8px" }}>
+              {STROKE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  style={{
+                    width: "24px",
+                    height: "24px",
+                    backgroundColor:
+                      c === "transparent"
+                        ? "repeating-conic-gradient(#ddd 0% 25%, white 0% 50%) 50% / 20px 20px"
+                        : c,
+                    border:
+                      color === c ? "1px solid #3d7eff" : "1px solid #ddd",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setColor(c)}
+                  title={`Fill color: ${c}`}
+                />
+              ))}
+            </div>
           </div>
-          <div>
-            <span style={{ fontSize: "14px" }}>Width: {strokeWidth}</span>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              value={strokeWidth}
-              onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-              style={{ flex: 1 }}
-            />
+        </div>
+      </div>
+
+      <div className="leftToolBar__section">
+            <div className="leftToolBar__section__title">
+              Width: {strokeWidth}
+            </div>
+            <div className="leftToolBar__section__tools">
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={strokeWidth}
+                onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+                style={{ flex: 1 }}
+              />
+            </div>
           </div>
-          <div>
-            <span style={{ fontSize: "14px" }}>Opacity: {opacity}%</span>
+          <div className="leftToolBar__section">
+            <div className="leftToolBar__section__title">
+            Opacity: {opacity}%
+            </div>
+            <div className="leftToolBar__section__tools">
             <input
               type="range"
               min="10"
@@ -302,13 +329,14 @@ const LeftToolBar = ({
               onChange={(e) => setOpacity(parseInt(e.target.value))}
               style={{ flex: 1 }}
             />
+            </div>
           </div>
+      {showAdvancedSettings && (
+        <div className="leftToolBar__section">
+          {/* Tool-specific settings */}
+          {renderToolSettings()}
         </div>
-      </div>
-      <div className="leftToolBar__section">
-        {/* Tool-specific settings */}
-        {renderToolSettings()}
-      </div>
+      )}
     </aside>
   );
 };
