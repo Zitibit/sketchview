@@ -80,7 +80,6 @@ const TopToolBar = ({
               <Popover.Content>
                 <Popover.Description>
                   <Collaboration
-                    collaborationEnabled={collaborationEnabled}
                     peerId={peerId}
                     peerRef={peerRef}
                     setRemotePeerId={setRemotePeerId}
