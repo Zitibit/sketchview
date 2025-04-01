@@ -30,6 +30,10 @@ import {
   Maximize2,
   Minimize2,
   Group,
+  Ungroup,
+  Layers,
+  BringToFront,
+  SendToBack,
   Eraser,
 } from "lucide-react";
 
@@ -53,7 +57,7 @@ type Element = {
   x2: number;
   y2: number;
   points?: Point[];
-  originalPoints?: Point[]; 
+  originalPoints?: Point[];
   text?: string;
   tool: Tool;
   roughElement?: any;
@@ -71,6 +75,9 @@ type Element = {
   originalOpacity?: number;
   convexHull?: Point[];
   boundingBox?: { minX: number; minY: number; maxX: number; maxY: number };
+  zIndex?: number;
+  label?: string;
+  isLabelEditing?: boolean;
 };
 
 const COLORS = [
@@ -408,6 +415,7 @@ export default function ExcalidrawClone() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
+  const labelInputRef = useRef<HTMLInputElement>(null);
   const [elements, setElements] = useState<Element[]>([]);
   const [currentTool, setCurrentTool] = useState<Tool>("select");
   const [isDrawing, setIsDrawing] = useState(false);
@@ -433,8 +441,8 @@ export default function ExcalidrawClone() {
   const [hachureGap, setHachureGap] = useState(10);
   const [freehandSettings, setFreehandSettings] = useState({
     thinning: 0.6,
-    smoothing: 0.2,  // Reduced from 0.5
-    streamline: 0.2, // Reduced from 0.5
+    smoothing: 0.2,
+    streamline: 0.2,
     taperStart: 0,
     taperEnd: 0,
   });
@@ -455,6 +463,7 @@ export default function ExcalidrawClone() {
   const [isDraggingGuide, setIsDraggingGuide] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
   const [elementsToErase, setElementsToErase] = useState<Element[]>([]);
+  const [lastClickTime, setLastClickTime] = useState(0);
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<Peer.DataConnection | null>(null);
   const rtreeRef = useRef<RBush<any>>(new RBush());
@@ -554,9 +563,14 @@ export default function ExcalidrawClone() {
       try {
         const parsed = JSON.parse(saved);
         const elementsWithHulls = updateFreehandElements(parsed);
-        setElements(elementsWithHulls);
-        setHistory([elementsWithHulls]);
-        updateRTree(elementsWithHulls);
+        // Initialize zIndex if not present
+        const elementsWithZIndex = elementsWithHulls.map((el, index) => ({
+          ...el,
+          zIndex: el.zIndex !== undefined ? el.zIndex : index
+        }));
+        setElements(elementsWithZIndex);
+        setHistory([elementsWithZIndex]);
+        updateRTree(elementsWithZIndex);
       } catch (e) {
         console.error("Failed to parse saved data", e);
       }
@@ -650,8 +664,14 @@ export default function ExcalidrawClone() {
         deleteSelected();
       } else if ((e.metaKey || e.ctrlKey) && e.key === "g") {
         groupSelected();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "Shift" && e.key === "G") {
+        ungroupSelected();
       } else if (e.key === "e") {
         setCurrentTool("eraser");
+      } else if (e.key === "f") {
+        bringToFront();
+      } else if (e.key === "b") {
+        sendToBack();
       }
     };
 
@@ -750,25 +770,23 @@ export default function ExcalidrawClone() {
 
   // Convert screen coordinates to canvas coordinates
   const screenToCanvas = (x: number, y: number) => {
-    // return {
-    //   x: (x - offset.x) / zoom,
-    //   y: (y - offset.y) / zoom,
-    // };
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
+    // const rect = canvasRef.current?.getBoundingClientRect();
+    // if (!rect) return { x: 0, y: 0 };
   
-    // Account for canvas position and scroll
+    // return {
+    //   x: (x - rect.left - offset.x) / zoom,
+    //   y: (y - rect.top - offset.y) / zoom
+    // };
     return {
-      x: (x - rect.left - offset.x) / zoom,
-      y: (y - rect.top - offset.y) / zoom
-    };
+            x: (x - offset.x) / zoom,
+            y: (y - offset.y) / zoom,
+          };
   };
 
   // Handle mouse wheel for zoom and pan
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
-      
       const delta = -e.deltaY;
       const zoomFactor = 1.1;
       const newZoom = delta > 0 ? zoom * zoomFactor : zoom / zoomFactor;
@@ -794,7 +812,6 @@ export default function ExcalidrawClone() {
         y: prev.y - deltaY,
       }));
     }
-    // Force immediate redraw
     renderCanvas();
   };
 
@@ -945,9 +962,11 @@ export default function ExcalidrawClone() {
       maxY: y
     });
 
+    // Sort by zIndex (higher zIndex comes first)
     return results
       .map(result => elements.find(el => el.id === result.id))
-      .filter(el => el && isPointInElement(el, x, y)) as Element[];
+      .filter(el => el && isPointInElement(el, x, y))
+      .sort((a, b) => (b?.zIndex || 0) - (a?.zIndex || 0)) as Element[];
   };
 
   // Check if element is in selection
@@ -980,21 +999,49 @@ export default function ExcalidrawClone() {
     const ctx = canvas.getContext("2d")!;
     if (!ctx) return;
 
-    
+    ctx.globalAlpha = (element.opacity || opacity) / 100;
+
     // For precise mode (when holding Shift)
-    if (element.preciseMode) {
-      ctx.beginPath();
-      ctx.moveTo(element.points[0][0], element.points[0][1]);
-      for (let i = 1; i < element.points.length; i++) {
-        ctx.lineTo(element.points[i][0], element.points[i][1]);
-      }
-      ctx.strokeStyle = element.stroke || color;
-      ctx.lineWidth = element.strokeWidth || strokeWidth;
-      ctx.stroke();
-      return;
-    }
+    // if (element.preciseMode) {
+    //   ctx.beginPath();
+    //   ctx.moveTo(element.points[0][0], element.points[0][1]);
+    //   for (let i = 1; i < element.points.length; i++) {
+    //     ctx.lineTo(element.points[i][0], element.points[i][1]);
+    //   }
+    //   ctx.strokeStyle = element.stroke || color;
+    //   ctx.lineWidth = element.strokeWidth || strokeWidth;
+    //   ctx.stroke();
+    //   return;
+    // }
   
-    // Normal perfect-freehand rendering
+    // // Normal perfect-freehand rendering
+    // const pathData = PerfectFreehand.getStroke(element.points, {
+    //   size: element.strokeWidth || strokeWidth,
+    //   thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
+    //   smoothing: element.freehandOptions?.smoothing || freehandSettings.smoothing,
+    //   streamline: element.freehandOptions?.streamline || freehandSettings.streamline,
+    //   start: {
+    //     taper: element.freehandOptions?.taperStart || freehandSettings.taperStart,
+    //     cap: true,
+    //   },
+    //   end: {
+    //     taper: element.freehandOptions?.taperEnd || freehandSettings.taperEnd,
+    //     cap: true,
+    //   },
+    // });
+    
+    // const path = new Path2D();
+    // if (pathData.length > 0) {
+    //   path.moveTo(pathData[0][0], pathData[0][1]);
+    //   for (let i = 1; i < pathData.length; i++) {
+    //     path.lineTo(pathData[i][0], pathData[i][1]);
+    //   }
+    //   path.closePath();
+    // }
+  
+    // ctx.fillStyle = element.stroke || color;
+    // ctx.fill(path);
+
     const pathData = PerfectFreehand.getStroke(element.points, {
       size: element.strokeWidth || strokeWidth,
       thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
@@ -1037,6 +1084,26 @@ export default function ExcalidrawClone() {
     if (element.isEditing) return;
 
     ctx.fillText(element.text || "", element.x1, element.y1 + 16);
+  };
+
+  // Render label for any element
+  const renderLabel = (element: Element) => {
+    if (!element.label && !element.isLabelEditing) return null;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d")!;
+    ctx.font = "12px Arial";
+    ctx.fillStyle = element.stroke || color;
+
+    if (element.isLabelEditing) return;
+
+    const centerX = (element.x1 + element.x2) / 2;
+    const centerY = (element.y1 + element.y2) / 2;
+    const textWidth = ctx.measureText(element.label || "").width;
+    
+    ctx.fillText(element.label || "", centerX - textWidth / 2, centerY);
   };
 
   // Render selection box and handles with convex hull visualization for freehand
@@ -1590,7 +1657,10 @@ export default function ExcalidrawClone() {
     );
     ctx.translate(-viewportX, -viewportY);
 
-    elements.forEach((element) => {
+    // Sort elements by zIndex for proper rendering order
+    const sortedElements = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+    sortedElements.forEach((element) => {
       ctx.globalAlpha = (element.opacity || opacity) / 100;
 
       switch (element.tool) {
@@ -1636,8 +1706,6 @@ export default function ExcalidrawClone() {
     ctx.restore();
   }, [elements, zoom, offset, dimensions, opacity]);
 
-
-
   // Optimized canvas rendering with requestAnimationFrame
   const renderCanvas = useCallback(() => {
     if (renderRequestRef.current) {
@@ -1660,7 +1728,10 @@ export default function ExcalidrawClone() {
       ctx.translate(offset.x, offset.y);
       ctx.scale(zoom, zoom);
 
-      elements.forEach((element) => {
+      // Sort elements by zIndex for proper rendering order
+      const sortedElements = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+      sortedElements.forEach((element) => {
         ctx.globalAlpha = (element.opacity || opacity) / 100;
 
         switch (element.tool) {
@@ -1691,6 +1762,8 @@ export default function ExcalidrawClone() {
             break;
         }
 
+        // Render label for any element
+        renderLabel(element);
         renderSelection(element);
       });
 
@@ -1767,6 +1840,7 @@ export default function ExcalidrawClone() {
       }
     };
   }, []);
+
   useEffect(() => {
     const observer = new ResizeObserver(() => {
       setDimensions({
@@ -1779,6 +1853,7 @@ export default function ExcalidrawClone() {
     observer.observe(document.body);
     return () => observer.disconnect();
   }, [renderCanvas]);
+
   // Handle text element click
   const handleTextElementClick = (element: Element) => {
     if (currentTool === "select" && element.tool === "text") {
@@ -1796,11 +1871,36 @@ export default function ExcalidrawClone() {
     }
   };
 
+  // Handle label editing
+  const handleLabelEdit = (element: Element) => {
+    setElements((prev) =>
+      prev.map((el) =>
+        el.id === element.id ? { ...el, isLabelEditing: true } : el
+      )
+    );
+    setTimeout(() => {
+      if (labelInputRef.current) {
+        labelInputRef.current.focus();
+        labelInputRef.current.select();
+      }
+    }, 0);
+  };
+
   // Handle text blur
   const handleTextBlur = (element: Element) => {
     setElements((prev) =>
       prev.map((el) =>
         el.id === element.id ? { ...el, isEditing: false } : el
+      )
+    );
+    pushToHistory(elements);
+  };
+
+  // Handle label blur
+  const handleLabelBlur = (element: Element) => {
+    setElements((prev) =>
+      prev.map((el) =>
+        el.id === element.id ? { ...el, isLabelEditing: false } : el
       )
     );
     pushToHistory(elements);
@@ -1814,6 +1914,17 @@ export default function ExcalidrawClone() {
     const newText = e.target.value;
     setElements((prev) =>
       prev.map((el) => (el.id === element.id ? { ...el, text: newText } : el))
+    );
+  };
+
+  // Handle label change
+  const handleLabelChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    element: Element
+  ) => {
+    const newLabel = e.target.value;
+    setElements((prev) =>
+      prev.map((el) => (el.id === element.id ? { ...el, label: newLabel } : el))
     );
   };
 
@@ -1868,6 +1979,9 @@ export default function ExcalidrawClone() {
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     
+    // Get the highest zIndex in current elements
+    const maxZIndex = elements.reduce((max, el) => Math.max(max, el.zIndex || 0), 0);
+    
     const newElements = copiedElements.map((el) => {
       const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
       
@@ -1890,6 +2004,7 @@ export default function ExcalidrawClone() {
         y1: newY1,
         x2: newX2,
         y2: newY2,
+        zIndex: maxZIndex + 1, // Place pasted elements on top
       };
   
       if (el.tool === 'freedraw' && el.points) {
@@ -1926,10 +2041,113 @@ export default function ExcalidrawClone() {
     setElements((prev) =>
       prev.map((el) =>
         selectedElements.some((sel) => sel.id === el.id)
-          ? { ...el, groupIds: [...(el.groupIds || []), groupId] }
+          ? { 
+              ...el, 
+              groupIds: [...(el.groupIds || []), groupId],
+              // Maintain selection state for grouped elements
+              isSelected: true
+            }
           : el
       )
     );
+    
+    // Update selected elements to include the group ID
+    setSelectedElements(prev => 
+      prev.map(el => ({
+        ...el,
+        groupIds: [...(el.groupIds || []), groupId]
+      }))
+    );
+  };
+
+  // Ungroup selected elements
+  const ungroupSelected = () => {
+    if (selectedElements.length === 0) return;
+
+    // Get all group IDs from selected elements
+    const groupIdsToUngroup = new Set<string>();
+    selectedElements.forEach(el => {
+      if (el.groupIds) {
+        el.groupIds.forEach(id => groupIdsToUngroup.add(id));
+      }
+    });
+
+    if (groupIdsToUngroup.size === 0) return;
+
+    // Remove group IDs from all elements that have them
+    setElements(prev =>
+      prev.map(el => {
+        if (el.groupIds && el.groupIds.some(id => groupIdsToUngroup.has(id))) {
+          const newGroupIds = el.groupIds.filter(id => !groupIdsToUngroup.has(id));
+          return {
+            ...el,
+            groupIds: newGroupIds.length > 0 ? newGroupIds : undefined
+          };
+        }
+        return el;
+      })
+    );
+
+    // Update the group IDs set
+    setGroupIds(prev => {
+      const newSet = new Set(prev);
+      groupIdsToUngroup.forEach(id => newSet.delete(id));
+      return newSet;
+    });
+
+    // Keep the same elements selected after ungrouping
+    setSelectedElements(prev =>
+      prev.map(el => ({
+        ...el,
+        groupIds: el.groupIds?.filter(id => !groupIdsToUngroup.has(id))
+      }))
+    );
+  };
+
+  // Bring selected elements to front
+  const bringToFront = () => {
+    if (selectedElements.length === 0) return;
+
+    // Get the highest zIndex in the current elements
+    const maxZIndex = elements.reduce((max, el) => Math.max(max, el.zIndex || 0), 0);
+
+    setElements(prev => {
+      let currentZIndex = maxZIndex + 1;
+      return prev.map(el => {
+        if (selectedElements.some(sel => sel.id === el.id)) {
+          return {
+            ...el,
+            zIndex: currentZIndex++
+          };
+        }
+        return el;
+      });
+    });
+
+    pushToHistory(elements);
+  };
+
+  // Send selected elements to back
+  const sendToBack = () => {
+    if (selectedElements.length === 0) return;
+
+    // Get the lowest zIndex in the current elements
+    const minZIndex = elements.reduce((min, el) => Math.min(min, el.zIndex || 0), 0);
+
+    setElements(prev => {
+      let currentZIndex = minZIndex - 1;
+      return prev.map(el => {
+        if (selectedElements.some(sel => sel.id === el.id)) {
+          return {
+            ...el,
+            zIndex: currentZIndex--
+          };
+        }
+        return el;
+      });
+    });
+
+    pushToHistory(elements);
   };
 
   // Clear all elements from canvas and localStorage
@@ -1961,8 +2179,11 @@ export default function ExcalidrawClone() {
     tempCtx.translate(offset.x, offset.y);
     tempCtx.scale(zoom, zoom);
 
+    // Sort elements by zIndex for proper rendering order
+    const sortedElements = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
     const rc = rough.canvas(tempCanvas);
-    elements.forEach((element) => {
+    sortedElements.forEach((element) => {
       tempCtx.globalAlpha = (element.opacity || opacity) / 100;
 
       if (element.roughElement) {
@@ -2008,6 +2229,13 @@ export default function ExcalidrawClone() {
         tempCtx.font = "16px Arial";
         tempCtx.fillStyle = element.stroke || color;
         tempCtx.fillText(element.text, element.x1, element.y1 + 16);
+      } else if (element.label) {
+        tempCtx.font = "12px Arial";
+        tempCtx.fillStyle = element.stroke || color;
+        const centerX = (element.x1 + element.x2) / 2;
+        const centerY = (element.y1 + element.y2) / 2;
+        const textWidth = tempCtx.measureText(element.label).width;
+        tempCtx.fillText(element.label, centerX - textWidth / 2, centerY);
       }
     });
 
@@ -2122,6 +2350,15 @@ export default function ExcalidrawClone() {
           handleTextElementClick(element);
         }
 
+        // Check for double click to add label
+        const now = Date.now();
+        if (now - lastClickTime < 300) { // 300ms threshold for double click
+          handleLabelEdit(element);
+          setLastClickTime(0);
+        } else {
+          setLastClickTime(now);
+        }
+
         setSelectedElements((prev) => {
           const isAlreadySelected = prev.some(
             (sel) =>
@@ -2145,12 +2382,15 @@ export default function ExcalidrawClone() {
               startMoving(e);
               return prev;
             } else {
-              const groupElements = element.groupIds?.length
-                ? elements.filter((el) =>
-                    el.groupIds?.some((id) => element.groupIds?.includes(id))
-                  )
-                : [element];
-              return groupElements;
+              // If the element is part of a group, select all elements in that group
+              if (element.groupIds && element.groupIds.length > 0) {
+                const groupElements = elements.filter((el) =>
+                  el.groupIds?.some((id) => element.groupIds?.includes(id))
+                );
+                return groupElements;
+              } else {
+                return [element];
+              }
             }
           }
         });
@@ -2174,7 +2414,7 @@ export default function ExcalidrawClone() {
         y2: canvasY,
         tool: "rectangle",
         stroke: "#3d7eff",
-        strokeWidth: 1 /zoom,
+        strokeWidth: 1 / zoom,
         opacity: 30,
       });
       return;
@@ -2194,6 +2434,8 @@ export default function ExcalidrawClone() {
         stroke: color,
         strokeWidth,
         opacity,
+        zIndex: elements.length > 0 ? 
+          Math.max(...elements.map(el => el.zIndex || 0)) + 1 : 0
       };
       setElementsWithHistory([...elements, newElement]);
       setSelectedElements([newElement]);
@@ -2211,19 +2453,21 @@ export default function ExcalidrawClone() {
         x2: canvasX,
         y2: canvasY,
         points: [[canvasX, canvasY]],
-        originalPoints: [[canvasX, canvasY]], // Store raw points
+        originalPoints: [[canvasX, canvasY]],
         tool: currentTool,
         freehandOptions: {
           size: strokeWidth,
-          thinning: e.shiftKey ? 0 : freehandSettings.thinning, // Disable thinning in precision mode
-          smoothing: e.shiftKey ? 0 : freehandSettings.smoothing, // Disable smoothing in precision mode
-          streamline: e.shiftKey ? 0 : freehandSettings.streamline, // Disable streamline in precision mode
+          thinning: e.shiftKey ? 0 : freehandSettings.thinning,
+          smoothing: e.shiftKey ? 0 : freehandSettings.smoothing,
+          streamline: e.shiftKey ? 0 : freehandSettings.streamline,
           taperStart: freehandSettings.taperStart,
           taperEnd: freehandSettings.taperEnd,
         },
         stroke: color,
         strokeWidth,
         opacity,
+        zIndex: elements.length > 0 ? 
+          Math.max(...elements.map(el => el.zIndex || 0)) + 1 : 0
       });
     } else {
       setCurrentElement({
@@ -2239,6 +2483,8 @@ export default function ExcalidrawClone() {
         fillStyle,
         hachureAngle,
         hachureGap,
+        zIndex: elements.length > 0 ? 
+          Math.max(...elements.map(el => el.zIndex || 0)) + 1 : 0
       });
     }
   };
@@ -2248,9 +2494,12 @@ export default function ExcalidrawClone() {
     if (isResizing || isMoving) return;
 
     const { clientX: x, clientY: y } = e;
+
+      // First transform screen coordinates to canvas coordinates
+    const canvasCoords = screenToCanvas(x, y);
+    const { x: canvasX, y: canvasY } = canvasCoords;
+
     if (isDrawing && currentElement?.tool === "select") {
-      const canvasCoords = screenToCanvas(e.clientX, e.clientY);
-      const { x: canvasX, y: canvasY } = canvasCoords;
   
       setCurrentElement(prev => ({
         ...prev!,
@@ -2260,18 +2509,37 @@ export default function ExcalidrawClone() {
   
       // Immediate visual feedback
       renderCanvas();
+      return;
     }
     if (currentTool === "freedraw" && isDrawing && currentElement) {
-      const canvasCoords = screenToCanvas(e.clientX, e.clientY);
-      const { x: canvasX, y: canvasY } = canvasCoords;
   
-      setCurrentElement(prev => ({
-        ...prev!,
-        points: [...prev!.points!, [canvasX, canvasY]],
-        originalPoints: [...prev!.originalPoints!, [canvasX, canvasY]], // Update both
-        x2: canvasX,
-        y2: canvasY,
-      }));
+      // setCurrentElement(prev => ({
+      //   ...prev!,
+      //   points: [...prev!.points!, [canvasX, canvasY]],
+      //   originalPoints: [...prev!.originalPoints!, [canvasX, canvasY]],
+      //   x2: canvasX,
+      //   y2: canvasY,
+      // }));
+          // For freehand, we need to capture the actual canvas coordinates
+    setCurrentElement(prev => {
+      if (!prev) return prev;
+      
+      // Calculate the actual position on canvas (accounting for zoom and offset)
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return prev;
+      
+      const x = (e.clientX - rect.left - offset.x) / zoom;
+      const y = (e.clientY - rect.top - offset.y) / zoom;
+      
+      return {
+        ...prev,
+        points: [...(prev.points || []), [x, y]],
+        originalPoints: [...(prev.originalPoints || []), [x, y]],
+        x2: x,
+        y2: y,
+      };
+    });
+    return;
     }
     if (currentTool === "pan" && isPanning) {
       const dx = x - panStart.x;
@@ -2290,9 +2558,6 @@ export default function ExcalidrawClone() {
     }
 
     if (!isDrawing || !currentElement) return;
-
-    const canvasCoords = screenToCanvas(x, y);
-    const { x: canvasX, y: canvasY } = canvasCoords;
 
     if (currentTool === "freedraw" && currentElement.points) {
       setCurrentElement((prev) => ({
@@ -2446,7 +2711,9 @@ export default function ExcalidrawClone() {
     { icon: <Eraser size={20} />, tool: "eraser", title: "Eraser" },
     { icon: <Move size={20} />, tool: "pan", title: "Pan" },
   ];
-
+  if(currentElement?.originalPoints){
+    console.log("Element", currentElement?.originalPoints, currentElement?.points);  
+  }
   return (
     <div
       style={{
@@ -2492,9 +2759,40 @@ export default function ExcalidrawClone() {
           style={selectedElements.length > 1 ? activeButtonStyle : buttonStyle}
           onClick={groupSelected}
           disabled={selectedElements.length < 2}
-          title="Group Selected"
+          title="Group Selected (Ctrl+G)"
         >
           <Group size={20} />
+        </button>
+
+        {/* Ungroup Button */}
+        <button
+          style={selectedElements.some(el => el.groupIds && el.groupIds.length > 0) ? 
+            activeButtonStyle : buttonStyle}
+          onClick={ungroupSelected}
+          disabled={!selectedElements.some(el => el.groupIds && el.groupIds.length > 0)}
+          title="Ungroup Selected (Ctrl+Shift+G)"
+        >
+          <Ungroup size={20} />
+        </button>
+
+        {/* Bring to Front Button */}
+        <button
+          style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
+          onClick={bringToFront}
+          disabled={selectedElements.length === 0}
+          title="Bring to Front (F)"
+        >
+          <BringToFront size={20} />
+        </button>
+
+        {/* Send to Back Button */}
+        <button
+          style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
+          onClick={sendToBack}
+          disabled={selectedElements.length === 0}
+          title="Send to Back (B)"
+        >
+          <SendToBack size={20} />
         </button>
 
         {/* Delete Button */}
@@ -2502,7 +2800,7 @@ export default function ExcalidrawClone() {
           style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
           onClick={deleteSelected}
           disabled={selectedElements.length === 0}
-          title="Delete Selected"
+          title="Delete Selected (Delete)"
         >
           <Trash2 size={20} />
         </button>
@@ -2512,7 +2810,7 @@ export default function ExcalidrawClone() {
           style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
           onClick={copySelected}
           disabled={selectedElements.length === 0}
-          title="Copy Selected"
+          title="Copy Selected (Ctrl+C)"
         >
           <Clipboard size={20} />
         </button>
@@ -2522,7 +2820,7 @@ export default function ExcalidrawClone() {
           style={copiedElements.length > 0 ? activeButtonStyle : buttonStyle}
           onClick={pasteElements}
           disabled={copiedElements.length === 0}
-          title="Paste"
+          title="Paste (Ctrl+V)"
         >
           <Copy size={20} />
         </button>
@@ -2633,7 +2931,7 @@ export default function ExcalidrawClone() {
           style={buttonStyle}
           onClick={undo}
           disabled={historyIndex <= 0}
-          title="Undo"
+          title="Undo (Ctrl+Z)"
         >
           <Undo2 size={20} />
         </button>
@@ -2641,7 +2939,7 @@ export default function ExcalidrawClone() {
           style={buttonStyle}
           onClick={redo}
           disabled={historyIndex >= history.length - 1}
-          title="Redo"
+          title="Redo (Ctrl+Y)"
         >
           <Redo2 size={20} />
         </button>
@@ -2977,6 +3275,25 @@ export default function ExcalidrawClone() {
             </span>
           </div>
 
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "14px", width: "80px" }}>Label:</span>
+            <input
+              type="text"
+              value={selectedElements[0].label || ""}
+              onChange={(e) => {
+                setElements((prev) =>
+                  prev.map((el) =>
+                    el.id === selectedElements[0].id
+                      ? { ...el, label: e.target.value }
+                      : el
+                  )
+                );
+              }}
+              style={{ flex: 1, ...inputStyle }}
+              placeholder="Element label"
+            />
+          </div>
+
           {["rectangle", "ellipse", "diamond"].includes(
             selectedElements[0].tool
           ) && (
@@ -3239,6 +3556,41 @@ export default function ExcalidrawClone() {
               padding: '2px 4px',
               zIndex: 100,
               minWidth: '100px'
+            }}
+            autoFocus
+          />
+        )
+      )}
+
+      {/* Label Input Elements */}
+      {elements.map(element =>
+        element.isLabelEditing && (
+          <input
+            key={`label-${element.id}`}
+            ref={labelInputRef}
+            type="text"
+            value={element.label || ''}
+            onChange={(e) => {
+              setElements(prev => prev.map(el => 
+                el.id === element.id ? {...el, label: e.target.value} : el
+              ));
+            }}
+            onBlur={() => handleLabelBlur(element)}
+            style={{
+              position: 'absolute',
+              left: `${offset.x + ((element.x1 + element.x2) / 2) * zoom}px`,
+              top: `${offset.y + ((element.y1 + element.y2) / 2) * zoom}px`,
+              transform: `scale(${zoom})`,
+              transformOrigin: 'top left',
+              fontSize: '12px',
+              border: '1px solid #3d7eff',
+              background: 'white',
+              color: element.stroke || color,
+              fontFamily: 'Arial',
+              padding: '2px 4px',
+              zIndex: 100,
+              minWidth: '100px',
+              textAlign: 'center'
             }}
             autoFocus
           />

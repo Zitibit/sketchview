@@ -1,4 +1,4 @@
-import { Box, Edit, Globe, User } from "lucide-react";
+import { Box, Edit, Globe, User, ChevronDown, ChevronRight, Heart } from "lucide-react";
 import React from "react";
 
 function App() {
@@ -16,12 +16,12 @@ function App() {
 
 function Header() {
   return (
-    <header className="header">
+    <header className="homeHeader">
       <nav className="nav">
         <a href="#" className="logo">
           SketchView
         </a>
-        <div className="nav-links">
+        {/* <div className="nav-links">
           <a
             href="https://github.com/your-repo/sketchview"
             target="_blank"
@@ -32,8 +32,8 @@ function Header() {
           <a href="https://your-sponsor-link.com" target="_blank" rel="noopener noreferrer">
             Sponsor
           </a>
-        </div>
-        <a href="#start" className="cta-button">
+        </div> */}
+        <a href="/sketchview/draw" className="cta-button">
           Start Drawing
         </a>
       </nav>
@@ -49,30 +49,63 @@ function Hero() {
         Sketch, design, and collaborate in real-time. Perfect for system design,
         interviews, and technical discussions.
       </p>
-      <a href="#start" className="cta-button hero-cta">
-        Get Started →
+      <a href="#learnmore" className="" style={{"display": "flex"}}>
+        Learn More <ChevronDown size={32} strokeWidth="1" />
       </a>
+      <div style={{display:"flex", width: "250px", margin: "-10px auto "}}>
+      <svg
+          className="absolute left-0 bottom-0 w-full h-4"
+          viewBox="0 0 200 20"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M5 15 C50 25, 150 -5, 195 15"
+            stroke="#fff"
+            strokeWidth="5"
+            strokeLinecap="round"
+          />
+        </svg></div>
     </section>
   );
 }
 
 function UseCases() {
   const useCases = [
-    { icon: <Edit />, title: "Sketching", description: "Quickly draft ideas with a hand-drawn, low-pressure interface." },
-    { icon: <Globe />, title: "Collaboration", description: "Work simultaneously with remote team members." },
-    { icon: <User />, title: "System Design", description: "Collaborate on architecture diagrams with your team in real-time." },
-    { icon: <Box />, title: "Interviews", description: "Conduct technical interviews with a shared, intuitive whiteboard." },
+    {
+      icon: <Edit />,
+      title: "Sketching",
+      description:
+        "Effortless Sketching, Limitless Ideas. Quickly draft concepts with a hand-drawn, low-pressure interface—perfect for brainstorming and rapid ideation.",
+    },
+    {
+      icon: <Globe />,
+      title: "Collaboration",
+      description: "Real-Time Collaboration, No Boundaries. Work seamlessly with remote team members, sketching and refining ideas together in real time.",
+    },
+    {
+      icon: <User />,
+      title: "System Design",
+      description:
+        "Design Complex Systems, Visually & Collaboratively. Create architecture diagrams with your team in real-time—making system design discussions more intuitive and productive.",
+    },
+    {
+      icon: <Box />,
+      title: "Interviews",
+      description:
+        "A Smarter Whiteboard for Technical Interviews. Conduct live coding and system design interviews with an intuitive, shared whiteboard that feels natural and efficient.",
+    },
   ];
 
   return (
-    <section className="use-cases">
-      <h2>Turn Thoughts into Visuals</h2>
+    <section className="use-cases" id="learnmore">
+      <h2>Think it. See it.</h2>
       <div className="use-case-grid">
         {useCases.map((useCase, index) => (
           <div key={index} className="use-case-card">
             <div className="icon">{useCase.icon}</div>
-            <h3>{useCase.title}</h3>
-            <p>{useCase.description}</p>
+            <div><h3>{useCase.title}</h3>
+            <p>{useCase.description}</p></div>
           </div>
         ))}
       </div>
@@ -82,11 +115,32 @@ function UseCases() {
 
 function Features() {
   const features = [
-    { icon: "zap", title: "Lightning Fast Performance", description: "Handles complex diagrams with zero lag, even during collaboration." },
-    { icon: "lock", title: "Privacy-First", description: "All processing happens locally. Your data stays with you." },
-    { icon: "rotate-cw", title: "Version History", description: "Restore previous versions of your sketches easily." },
-    { icon: "upload", title: "Flexible Export Options", description: "Save as PNG, SVG, or JSON for sharing and editing." },
-    { icon: "puzzle", title: "Custom Components", description: "Save frequently used components for quick access." },
+    {
+      icon: "zap",
+      title: "Lightning Fast Performance",
+      description:
+        "Handles complex diagrams with zero lag, even during collaboration.",
+    },
+    {
+      icon: "lock",
+      title: "Privacy-First",
+      description: "All processing happens locally. Your data stays with you.",
+    },
+    {
+      icon: "rotate-cw",
+      title: "Version History",
+      description: "Restore previous versions of your sketches easily.",
+    },
+    {
+      icon: "upload",
+      title: "Flexible Export Options",
+      description: "Save as PNG, SVG, or JSON for sharing and editing.",
+    },
+    {
+      icon: "puzzle",
+      title: "Custom Components",
+      description: "Save frequently used components for quick access.",
+    },
   ];
 
   return (
@@ -113,9 +167,9 @@ function CallToAction() {
   return (
     <section className="cta-section" id="start">
       <h2>Ready to Collaborate?</h2>
-      <p>Join thousands of engineers using SketchView daily.</p>
-      <a href="#" className="cta-button white">
-        Start Drawing Now →
+      <p>Join thousands of people using SketchView daily.</p>
+      <a href="/sketchview/draw" className="cta-button white">
+        Start Drawing Now <ChevronRight />
       </a>
       <p className="cta-note">No signup required. Free forever.</p>
     </section>
@@ -126,18 +180,29 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="footer-links">
-        <a href="https://github.com/your-repo/sketchview" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://github.com/Zitibit/sketchview"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           GitHub
         </a>
-        <a href="https://your-sponsor-link.com" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://your-sponsor-link.com"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           Sponsor
         </a>
-        <a href="#">Docs</a>
+        {/* <a href="#">Docs</a>
         <a href="#">Privacy</a>
-        <a href="#">Terms</a>
+        <a href="#">Terms</a> */}
       </div>
       <p className="copyright">
-        © {new Date().getFullYear()} SketchView. Open-source and free forever.
+        © {new Date().getFullYear()} SketchView
+      </p>
+      <p>
+      Made with <Heart size={16} color="#E91E63" fill="#E91E63" style={{ marginBottom: -2 }} /> in Bengaluru, India
       </p>
     </footer>
   );
