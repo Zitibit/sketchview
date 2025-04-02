@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "rm -rf .next && NEXT_DEV_CACHE=false next dev" ,
+    "dev": "rm -rf .next && NEXT_DEV_CACHE=false next dev",
     "build": "NEXT_DISABLE_ESLINT=1 next build --no-lint",
     "start": "next start",
     "lint": "next lint",
@@ -14,6 +14,7 @@
     "@radix-ui/themes": "3.2.1",
     "@zag-js/utils": "1.5.0",
     "antd": "^5.24.4",
+    "fabric": "^5.5.1",
     "google": "^2.1.0",
     "gray-matter": "^4.0.3",
     "lucide-react": "0.483.0",

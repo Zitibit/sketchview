@@ -1,354 +1,420 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import rough from "roughjs";
-import * as PerfectFreehand from "perfect-freehand";
-import Peer from "peerjs";
-import RBush from "rbush";
-import {
-  MousePointer2,
-  RectangleHorizontal,
-  Diamond,
-  ArrowRight,
-  Circle,
-  Pencil,
-  Type,
-  Trash2,
-  Minus,
-  Share2,
-  Share as Share2Off,
-  ZoomIn,
-  ZoomOut,
-  Move,
-  Undo2,
-  Redo2,
-  Download,
-  ChevronLeft,
-  ChevronRight,
-  Settings,
-  Grid,
-  Copy,
-  Clipboard,
-  Maximize2,
-  Minimize2,
-  Group,
-  Ungroup,
-  Layers,
-  BringToFront,
-  SendToBack,
-  Eraser,
-} from "lucide-react";
+import React, { useState, useEffect, useRef } from 'react';
+import { fabric } from 'fabric';
+import rough from 'roughjs';
+import { getStroke } from 'perfect-freehand';
+import * as LucideIcons from 'lucide-react';
 
-type Point = [number, number];
-type Tool =
-  | "select"
-  | "rectangle"
-  | "ellipse"
-  | "line"
-  | "freedraw"
-  | "text"
-  | "pan"
-  | "arrow"
-  | "diamond"
-  | "eraser";
+// ====================== TYPES ======================
+type ToolType =
+  | 'select'
+  | 'rectangle'
+  | 'ellipse'
+  | 'diamond'
+  | 'arrow'
+  | 'bezier-arrow'
+  | 'line'
+  | 'freehand'
+  | 'text';
 
-type Element = {
+type DrawingMode = 'rough' | 'freehand';
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface CanvasState {
+  objects: fabric.Object[];
+  background: string;
+}
+
+interface PeerData {
+  type: string;
+  data: any;
+  sender?: string;
+}
+
+interface PeerConnection {
   id: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  points?: Point[];
-  originalPoints?: Point[];
-  text?: string;
-  tool: Tool;
-  roughElement?: any;
-  freehandOptions?: any;
-  isSelected?: boolean;
-  stroke?: string;
-  strokeWidth?: number;
-  opacity?: number;
-  isEditing?: boolean;
-  fill?: string;
-  fillStyle?: string;
-  hachureAngle?: number;
-  hachureGap?: number;
-  groupIds?: string[];
-  originalOpacity?: number;
-  convexHull?: Point[];
-  boundingBox?: { minX: number; minY: number; maxX: number; maxY: number };
-  zIndex?: number;
-  label?: string;
-  isLabelEditing?: boolean;
+  name: string;
+  connection: RTCPeerConnection;
+  channel: RTCDataChannel;
+}
+
+// ====================== STYLES ======================
+const styles = `
+.drawing-tool {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #f8f9fa;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.drawing-tool__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.drawing-tool__toolbar-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-right: 1px solid #e0e0e0;
+}
+
+.drawing-tool__toolbar-group:last-child {
+  border-right: none;
+}
+
+.drawing-tool__tool-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #ffffff;
+  color: #333333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.drawing-tool__tool-button:hover {
+  background-color: #f0f0f0;
+}
+
+.drawing-tool__tool-button--active {
+  background-color: #e0e0e0;
+  border-color: #b0b0b0;
+}
+
+.drawing-tool__property-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  color: #555555;
+}
+
+.drawing-tool__color-picker {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.drawing-tool__slider {
+  width: 80px;
+}
+
+.drawing-tool__main-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.drawing-tool__canvas-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f5f5f5;
+  overflow: auto;
+}
+
+.drawing-tool__canvas {
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.drawing-tool__side-panel {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  border-left: 1px solid #e0e0e0;
+  overflow-y: auto;
+}
+
+.drawing-tool__properties-panel {
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.drawing-tool__properties-panel h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 16px;
+  color: #333333;
+}
+
+.drawing-tool__property-group {
+  margin-bottom: 12px;
+}
+
+.drawing-tool__property-input {
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 4px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* Collaboration Panel */
+.collaboration-panel {
+  padding: 16px;
+}
+
+.collaboration-panel h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 16px;
+  color: #333333;
+}
+
+.collaboration-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #ffffff;
+  color: #333333;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.collaboration-button:hover {
+  background-color: #f0f0f0;
+}
+
+.collaboration-button.primary {
+  background-color: #4a89dc;
+  color: white;
+  border-color: #3a70c2;
+}
+
+.collaboration-button.primary:hover {
+  background-color: #3a70c2;
+}
+
+.collaboration-button.danger {
+  background-color: #e74c3c;
+  color: white;
+  border-color: #c0392b;
+}
+
+.collaboration-button.danger:hover {
+  background-color: #c0392b;
+}
+
+.participants-list {
+  margin-bottom: 16px;
+}
+
+.participants-list h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #555555;
+}
+
+.participant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.host-badge {
+  margin-left: auto;
+  padding: 2px 6px;
+  background-color: #4a89dc;
+  color: white;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+/* Modals */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.modal h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #555555;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.modal-actions button {
+  padding: 8px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-actions button:hover {
+  background-color: #f0f0f0;
+}
+
+.modal-actions button.primary {
+  background-color: #4a89dc;
+  color: white;
+  border-color: #3a70c2;
+}
+
+.modal-actions button.primary:hover {
+  background-color: #3a70c2;
+}
+`;
+
+// ====================== UTILITIES ======================
+const createRoughObject = (
+  roughCanvas: rough.RoughCanvas,
+  shapeType: string,
+  start: Point,
+  end: Point,
+  options: any
+): rough.RoughSVG | null => {
+  const width = Math.abs(end.x - start.x);
+  const height = Math.abs(end.y - start.y);
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+
+  let generator: rough.RoughSVG | null = null;
+
+  switch (shapeType) {
+    case 'rectangle':
+      generator = roughCanvas.generator.rectangle(left, top, width, height, options);
+      break;
+    case 'ellipse':
+      generator = roughCanvas.generator.ellipse(
+        left + width / 2,
+        top + height / 2,
+        width,
+        height,
+        options
+      );
+      break;
+    case 'diamond':
+      const points = [
+        [left + width / 2, top],
+        [left + width, top + height / 2],
+        [left + width / 2, top + height],
+        [left, top + height / 2]
+      ];
+      generator = roughCanvas.generator.polygon(points, options);
+      break;
+    case 'arrow':
+    case 'line':
+      generator = roughCanvas.generator.line(
+        start.x,
+        start.y,
+        end.x,
+        end.y,
+        { ...options, endArrow: shapeType === 'arrow' ? 'arrow' : undefined }
+      );
+      break;
+  }
+
+  return generator;
 };
 
-const COLORS = [
-  "#000000",
-  "#ff0000",
-  "#00ff00",
-  "#0000ff",
-  "#ffff00",
-  "#00ffff",
-  "#ff00ff",
-  "#ff9900",
-  "#9900ff",
-];
+const createBezierArrow = (start: Point, end: Point, options: any): fabric.Path => {
+  const midX = (start.x + end.x) / 2;
+  const ctrl1 = { x: midX, y: start.y };
+  const ctrl2 = { x: midX, y: end.y };
 
-const FILL_STYLES = ["solid", "hachure", "zigzag", "cross-hatch", "dots"];
+  const pathData = `M ${start.x} ${start.y} C ${ctrl1.x} ${ctrl1.y}, ${ctrl2.x} ${ctrl2.y}, ${end.x} ${end.y}`;
 
-const toolbarStyle = {
-  position: "absolute",
-  top: "10px",
-  left: "10px",
-  zIndex: 10,
-  backgroundColor: "white",
-  borderRadius: "8px",
-  boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-  padding: "8px",
-  display: "flex",
-  gap: "8px",
-  alignItems: "center",
+  return new fabric.Path(pathData, {
+    fill: 'transparent',
+    stroke: options.stroke || '#000000',
+    strokeWidth: options.strokeWidth || 2,
+    selectable: true
+  });
 };
 
-const buttonStyle = {
-  padding: "8px",
-  borderRadius: "4px",
-  border: "none",
-  backgroundColor: "transparent",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
+const createFreehandPath = (strokePoints: number[][]): string => {
+  if (strokePoints.length < 2) return '';
+
+  let pathData = `M ${strokePoints[0][0]} ${strokePoints[0][1]}`;
+
+  for (let i = 1; i < strokePoints.length; i++) {
+    pathData += ` L ${strokePoints[i][0]} ${strokePoints[i][1]}`;
+  }
+
+  return pathData;
 };
 
-const activeButtonStyle = {
-  ...buttonStyle,
-  backgroundColor: "#e0e0e0",
-};
+const generateConvexHull = (points: Point[]): Point[] => {
+  if (points.length < 3) return points;
 
-const colorInputStyle = {
-  width: "32px",
-  height: "32px",
-  cursor: "pointer",
-  border: "none",
-  padding: 0,
-};
-
-const rangeInputStyle = {
-  width: "80px",
-  margin: "0 8px",
-};
-
-const collaborationPanelStyle = {
-  position: "absolute",
-  top: "10px",
-  right: "10px",
-  zIndex: 10,
-  backgroundColor: "white",
-  borderRadius: "8px",
-  boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-  padding: "8px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-};
-
-const inputStyle = {
-  border: "1px solid #ccc",
-  borderRadius: "4px",
-  padding: "4px 8px",
-  fontSize: "14px",
-};
-
-const connectButtonStyle = {
-  backgroundColor: "#4285f4",
-  color: "white",
-  border: "none",
-  borderRadius: "4px",
-  padding: "6px 12px",
-  cursor: "pointer",
-  fontSize: "14px",
-};
-
-const settingsPanelStyle = {
-  position: "absolute",
-  top: "60px",
-  left: "10px",
-  zIndex: 10,
-  backgroundColor: "white",
-  borderRadius: "8px",
-  boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-  padding: "12px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "12px",
-  width: "200px",
-};
-
-const previewStyle = {
-  position: "absolute",
-  right: "10px",
-  bottom: "10px",
-  width: "200px",
-  height: "150px",
-  backgroundColor: "white",
-  borderRadius: "8px",
-  boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-  border: "1px solid #ddd",
-  overflow: "hidden",
-  zIndex: 10,
-};
-
-const propertiesPanelStyle = {
-  position: "absolute",
-  bottom: "10px",
-  left: "10px",
-  zIndex: 10,
-  backgroundColor: "white",
-  borderRadius: "8px",
-  boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-  padding: "12px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-};
-
-const RulerCorner = () => (
-  <div style={{
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 30,
-    height: 30,
-    backgroundColor: '#f5f5f5',
-    zIndex: 6,
-    borderRight: '1px solid #ddd',
-    borderBottom: '1px solid #ddd',
-  }} />
-);
-
-const Ruler = ({ type, width, height, zoom, offset, onMouseDown }: {
-  type: 'horizontal' | 'vertical';
-  width: number;
-  height: number;
-  zoom: number;
-  offset: { x: number; y: number };
-  onMouseDown: (e: React.MouseEvent, type: 'horizontal' | 'vertical') => void;
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rulerSize = 30;
-  const tickSize = 10;
-  const majorTickInterval = 100;
-  const minorTickInterval = 25;
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = '10px Arial';
-    ctx.fillStyle = '#333';
-    ctx.strokeStyle = '#999';
-    ctx.lineWidth = 1;
-
-    if (type === 'horizontal') {
-      const start = Math.floor(-offset.x / zoom / majorTickInterval) * majorTickInterval;
-      const end = start + (width / zoom) + majorTickInterval;
-
-      for (let pos = start; pos < end; pos += minorTickInterval) {
-        const screenX = offset.x + pos * zoom;
-        const isMajor = pos % majorTickInterval === 0;
-
-        ctx.beginPath();
-        ctx.moveTo(screenX, rulerSize);
-        ctx.lineTo(screenX, rulerSize - (isMajor ? tickSize : tickSize / 2));
-        ctx.stroke();
-
-        if (isMajor) {
-          ctx.fillText(pos.toString(), screenX + 2, rulerSize - tickSize - 2);
-        }
-      }
-    } else {
-      const start = Math.floor(-offset.y / zoom / majorTickInterval) * majorTickInterval;
-      const end = start + (height / zoom) + majorTickInterval;
-
-      for (let pos = start; pos < end; pos += minorTickInterval) {
-        const screenY = offset.y + pos * zoom;
-        const isMajor = pos % majorTickInterval === 0;
-
-        ctx.beginPath();
-        ctx.moveTo(rulerSize, screenY);
-        ctx.lineTo(rulerSize - (isMajor ? tickSize : tickSize / 2), screenY);
-        ctx.stroke();
-
-        if (isMajor) {
-          ctx.save();
-          ctx.translate(2, screenY - 2);
-          ctx.rotate(-Math.PI / 2);
-          ctx.fillText(pos.toString(), 0, 0);
-          ctx.restore();
-        }
-      }
-    }
-  }, [type, width, height, zoom, offset]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={type === 'horizontal' ? width : rulerSize}
-      height={type === 'horizontal' ? rulerSize : height}
-      style={{
-        position: 'absolute',
-        top: type === 'horizontal' ? 0 : rulerSize,
-        left: type === 'horizontal' ? rulerSize : 0,
-        backgroundColor: '#f5f5f5',
-        zIndex: 5,
-      }}
-      onMouseDown={(e) => onMouseDown(e, type)}
-    />
-  );
-};
-
-const Guides = ({ guides }: { guides: { x?: number; y?: number }[] }) => {
-  return (
-    <>
-      {guides.map((guide, i) => (
-        <React.Fragment key={i}>
-          {guide.x !== undefined && (
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: guide.x,
-              width: 1,
-              height: '100%',
-              backgroundColor: 'blue',
-              zIndex: 4,
-              pointerEvents: 'none',
-            }} />
-          )}
-          {guide.y !== undefined && (
-            <div style={{
-              position: 'absolute',
-              top: guide.y,
-              left: 0,
-              width: '100%',
-              height: 1,
-              backgroundColor: 'blue',
-              zIndex: 4,
-              pointerEvents: 'none',
-            }} />
-          )}
-        </React.Fragment>
-      ))}
-    </>
-  );
-};
-
-const calculateConvexHull = (points: Point[]): Point[] => {
-  if (points.length <= 2) return points;
-
-  points.sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
+  points.sort((a, b) => a.x - b.x || a.y - b.y);
 
   const lower: Point[] = [];
   for (const point of points) {
@@ -360,3242 +426,1189 @@ const calculateConvexHull = (points: Point[]): Point[] => {
 
   const upper: Point[] = [];
   for (let i = points.length - 1; i >= 0; i--) {
-    const point = points[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], points[i]) <= 0) {
       upper.pop();
     }
-    upper.push(point);
+    upper.push(points[i]);
   }
 
   upper.pop();
   lower.pop();
-
-  return [...lower, ...upper];
+  return lower.concat(upper);
 };
 
 const cross = (o: Point, a: Point, b: Point): number => {
-  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
 };
 
-const isPointInConvexHull = (hull: Point[], point: Point): boolean => {
-  if (hull.length < 3) return false;
-
-  let inside = false;
-  for (let i = 0, j = hull.length - 1; i < hull.length; j = i++) {
-    const xi = hull[i][0], yi = hull[i][1];
-    const xj = hull[j][0], yj = hull[j][1];
-    
-    const intersect = ((yi > point[1]) !== (yj > point[1])) &&
-      (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-
-  return inside;
+const handleObjectModification = (object: fabric.Object): void => {
+  console.log('Object modified:', object);
 };
 
-const calculateBoundingBox = (points: Point[]): { minX: number; minY: number; maxX: number; maxY: number } => {
-  if (points.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+const copySelectedObjects = (fabricCanvas: fabric.Canvas): void => {
+  if (!fabricCanvas.getActiveObject()) return;
 
-  let minX = points[0][0];
-  let minY = points[0][1];
-  let maxX = points[0][0];
-  let maxY = points[0][1];
-
-  for (const [x, y] of points) {
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
-  }
-
-  return { minX, minY, maxX, maxY };
-};
-
-export default function ExcalidrawClone() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const previewRef = useRef<HTMLCanvasElement>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
-  const labelInputRef = useRef<HTMLInputElement>(null);
-  const [elements, setElements] = useState<Element[]>([]);
-  const [currentTool, setCurrentTool] = useState<Tool>("select");
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [currentElement, setCurrentElement] = useState<Element | null>(null);
-  const [selectedElements, setSelectedElements] = useState<Element[]>([]);
-  const [color, setColor] = useState("#000000");
-  const [strokeWidth, setStrokeWidth] = useState(2);
-  const [opacity, setOpacity] = useState(100);
-  const [collaborationEnabled, setCollaborationEnabled] = useState(false);
-  const [peerId, setPeerId] = useState("");
-  const [remotePeerId, setRemotePeerId] = useState("");
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [history, setHistory] = useState<Element[][]>([[]]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
-  const [roughness, setRoughness] = useState(1);
-  const [fillStyle, setFillStyle] = useState("solid");
-  const [hachureAngle, setHachureAngle] = useState(41);
-  const [hachureGap, setHachureGap] = useState(10);
-  const [freehandSettings, setFreehandSettings] = useState({
-    thinning: 0.6,
-    smoothing: 0.2,
-    streamline: 0.2,
-    taperStart: 0,
-    taperEnd: 0,
+  fabricCanvas.getActiveObject()?.clone((cloned: fabric.Object) => {
+    (window as any)._clipboard = cloned;
   });
-  const [showGrid, setShowGrid] = useState(true);
-  const [gridSize, setGridSize] = useState(20);
-  const [gridContrast, setGridContrast] = useState(1);
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0 });
-  const [resizeElement, setResizeElement] = useState<Element | null>(null);
-  const [resizePosition, setResizePosition] = useState("");
-  const [isMoving, setIsMoving] = useState(false);
-  const [moveStart, setMoveStart] = useState({ x: 0, y: 0 });
-  const [connectionCount, setConnectionCount] = useState(0);
-  const [copiedElements, setCopiedElements] = useState<Element[]>([]);
-  const [showPreview, setShowPreview] = useState(true);
-  const [groupIds, setGroupIds] = useState<Set<string>>(new Set());
-  const [guides, setGuides] = useState<{ x?: number; y?: number }[]>([]);
-  const [isDraggingGuide, setIsDraggingGuide] = useState(false);
-  const [isErasing, setIsErasing] = useState(false);
-  const [elementsToErase, setElementsToErase] = useState<Element[]>([]);
-  const [lastClickTime, setLastClickTime] = useState(0);
-  const peerRef = useRef<Peer | null>(null);
-  const connRef = useRef<Peer.DataConnection | null>(null);
-  const rtreeRef = useRef<RBush<any>>(new RBush());
-  const renderRequestRef = useRef<number | null>(null);
+};
 
-  // Initialize RBush with elements
-  const updateRTree = useCallback((elements: Element[]) => {
-    const tree = rtreeRef.current;
-    tree.clear();
-    
-    elements.forEach(element => {
-      let minX, minY, maxX, maxY;
-      
-      if (element.tool === 'freedraw' && element.boundingBox) {
-        minX = element.boundingBox.minX;
-        minY = element.boundingBox.minY;
-        maxX = element.boundingBox.maxX;
-        maxY = element.boundingBox.maxY;
-      } else {
-        minX = Math.min(element.x1, element.x2);
-        maxX = Math.max(element.x1, element.x2);
-        minY = Math.min(element.y1, element.y2);
-        maxY = Math.max(element.y1, element.y2);
-      }
-      
-      tree.insert({
-        minX,
-        minY,
-        maxX,
-        maxY,
-        id: element.id,
-        element
-      });
-    });
-  }, []);
+const pasteObjects = (fabricCanvas: fabric.Canvas): void => {
+  if (!(window as any)._clipboard) return;
 
-  // Calculate convex hull and bounding box for freehand elements
-  const updateFreehandElements = useCallback((elements: Element[]): Element[] => {
-    return elements.map(element => {
-      if (element.tool === 'freedraw' && element.points) {
-        const boundingBox = calculateBoundingBox(element.points);
-        return {
-          ...element,
-          x1: boundingBox.minX,
-          y1: boundingBox.minY,
-          x2: boundingBox.maxX,
-          y2: boundingBox.maxY,
-          boundingBox,
-          convexHull: element.points.length > 2 ? calculateConvexHull(element.points) : undefined
-        };
-      }
-      return element;
-    });
-  }, []);
-
-  // Transform points for moving elements
-  const transformPoints = (points: Point[], dx: number, dy: number): Point[] => {
-    return points.map(([x, y]) => [x + dx, y + dy]);
-  };
-
-  // Handle ruler mouse down to create guides
-  const handleRulerMouseDown = (e: React.MouseEvent, type: 'horizontal' | 'vertical') => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pos = type === 'horizontal' 
-      ? e.clientX - rect.left 
-      : e.clientY - rect.top;
-   
-    const guidePos = type === 'horizontal'
-      ? offset.x + (pos - 30) * zoom
-      : offset.y + (pos - 30) * zoom;
-   
-    setGuides(prev => [...prev, type === 'horizontal' ? { x: guidePos } : { y: guidePos }]);
-    setIsDraggingGuide(true);
-  };
-
-  // Initialize canvas dimensions
-  useEffect(() => {
-    const updateDimensions = () => {
-      setDimensions({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    updateDimensions();
-    window.addEventListener("resize", updateDimensions);
-
-    return () => {
-      window.removeEventListener("resize", updateDimensions);
-    };
-  }, []);
-
-  // Initialize from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("excalidraw-data");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const elementsWithHulls = updateFreehandElements(parsed);
-        // Initialize zIndex if not present
-        const elementsWithZIndex = elementsWithHulls.map((el, index) => ({
-          ...el,
-          zIndex: el.zIndex !== undefined ? el.zIndex : index
-        }));
-        setElements(elementsWithZIndex);
-        setHistory([elementsWithZIndex]);
-        updateRTree(elementsWithZIndex);
-      } catch (e) {
-        console.error("Failed to parse saved data", e);
-      }
-    }
-  }, [updateRTree, updateFreehandElements]);
-
-  // Save to localStorage and update R-tree
-  useEffect(() => {
-    if (elements.length > 0 || historyIndex > 0) {
-      localStorage.setItem("excalidraw-data", JSON.stringify(elements));
-      updateRTree(elements);
-    }
-  }, [elements, historyIndex, updateRTree]);
-
-  // Initialize PeerJS when collaboration is enabled
-  useEffect(() => {
-    if (!collaborationEnabled) {
-      if (peerRef.current) {
-        peerRef.current.destroy();
-        peerRef.current = null;
-      }
-      return;
-    }
-
-    const peer = new Peer();
-    peerRef.current = peer;
-
-    peer.on("open", (id) => {
-      setPeerId(id);
+  (window as any)._clipboard.clone((clonedObj: fabric.Object) => {
+    fabricCanvas.discardActiveObject();
+    clonedObj.set({
+      left: (clonedObj.left || 0) + 10,
+      top: (clonedObj.top || 0) + 10,
+      evented: true
     });
 
-    peer.on("connection", (conn) => {
-      if (connectionCount >= 3) {
-        conn.close();
-        return;
-      }
-
-      setConnectionCount((prev) => prev + 1);
-      connRef.current = conn;
-
-      conn.on("close", () => {
-        setConnectionCount((prev) => prev - 1);
+    if (clonedObj.type === 'activeSelection') {
+      (clonedObj as fabric.ActiveSelection).canvas = fabricCanvas;
+      (clonedObj as fabric.ActiveSelection).forEachObject((obj: fabric.Object) => {
+        fabricCanvas.add(obj);
       });
-
-      conn.on("data", (data: any) => {
-        if (data.type === "elements") {
-          const elementsWithHulls = updateFreehandElements(data.elements);
-          setElements(elementsWithHulls);
-          setHistory([elementsWithHulls]);
-          setHistoryIndex(0);
-          updateRTree(elementsWithHulls);
-        } else if (data.type === "element") {
-          const elementsWithHulls = updateFreehandElements([...elements, data.element]);
-          setElements(elementsWithHulls);
-          updateRTree(elementsWithHulls);
-        }
-      });
-    });
-
-    return () => {
-      if (peerRef.current) {
-        peerRef.current.destroy();
-      }
-    };
-  }, [collaborationEnabled, connectionCount, elements, updateRTree, updateFreehandElements]);
-
-  // Check for peer ID in URL on load
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const peerParam = params.get("peer");
-    if (peerParam) {
-      setRemotePeerId(peerParam);
-      setCollaborationEnabled(true);
-    }
-  }, []);
-
-  // Handle keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "c") {
-        if (selectedElements.length > 0) {
-          setCopiedElements(selectedElements);
-        }
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "v") {
-        pasteElements();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
-        undo();
-      } else if ((e.metaKey || e.ctrlKey) && (e.key === "Z" || e.key === "y")) {
-        redo();
-      } else if (e.key === "Delete") {
-        deleteSelected();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "g") {
-        groupSelected();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "Shift" && e.key === "G") {
-        ungroupSelected();
-      } else if (e.key === "e") {
-        setCurrentTool("eraser");
-      } else if (e.key === "f") {
-        bringToFront();
-      } else if (e.key === "b") {
-        sendToBack();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [selectedElements, copiedElements, history, historyIndex]);
-
-  const connectToPeer = () => {
-    if (!remotePeerId || !peerRef.current || connectionCount >= 3) return;
-
-    const conn = peerRef.current.connect(remotePeerId);
-    setConnectionCount((prev) => prev + 1);
-    connRef.current = conn;
-
-    conn.on("open", () => {
-      conn.send({
-        type: "elements",
-        elements,
-      });
-    });
-
-    conn.on("close", () => {
-      setConnectionCount((prev) => prev - 1);
-    });
-
-    conn.on("data", (data: any) => {
-      if (data.type === "elements") {
-        const elementsWithHulls = updateFreehandElements(data.elements);
-        setElements(elementsWithHulls);
-        setHistory([elementsWithHulls]);
-        setHistoryIndex(0);
-        updateRTree(elementsWithHulls);
-      } else if (data.type === "element") {
-        const elementsWithHulls = updateFreehandElements([...elements, data.element]);
-        setElements(elementsWithHulls);
-        updateRTree(elementsWithHulls);
-      }
-    });
-  };
-
-  const sendElement = (element: Element) => {
-    if (connRef.current) {
-      connRef.current.send({
-        type: "element",
-        element,
-      });
-    }
-  };
-
-  // Push state to history
-  const pushToHistory = useCallback(
-    (newElements: Element[]) => {
-      const newHistory = history.slice(0, historyIndex + 1);
-      setHistory([...newHistory, newElements]);
-      setHistoryIndex(newHistory.length);
-    },
-    [history, historyIndex]
-  );
-
-  // Modified setElements to auto-push to history
-  const setElementsWithHistory = useCallback(
-    (newElements: Element[]) => {
-      const elementsWithHulls = updateFreehandElements(newElements);
-      setElements(elementsWithHulls);
-      updateRTree(elementsWithHulls);
-      pushToHistory(elementsWithHulls);
-      if (collaborationEnabled && connRef.current) {
-        connRef.current.send({
-          type: "elements",
-          elements: elementsWithHulls,
-        });
-      }
-    },
-    [pushToHistory, collaborationEnabled, updateRTree, updateFreehandElements]
-  );
-
-  // Undo functionality
-  const undo = () => {
-    if (historyIndex <= 0) return;
-    const newIndex = historyIndex - 1;
-    setHistoryIndex(newIndex);
-    setElements(history[newIndex]);
-    updateRTree(history[newIndex]);
-  };
-
-  // Redo functionality
-  const redo = () => {
-    if (historyIndex >= history.length - 1) return;
-    const newIndex = historyIndex + 1;
-    setHistoryIndex(newIndex);
-    setElements(history[newIndex]);
-    updateRTree(history[newIndex]);
-  };
-
-  // Convert screen coordinates to canvas coordinates
-  const screenToCanvas = (x: number, y: number) => {
-    // const rect = canvasRef.current?.getBoundingClientRect();
-    // if (!rect) return { x: 0, y: 0 };
-  
-    // return {
-    //   x: (x - rect.left - offset.x) / zoom,
-    //   y: (y - rect.top - offset.y) / zoom
-    // };
-    return {
-            x: (x - offset.x) / zoom,
-            y: (y - offset.y) / zoom,
-          };
-  };
-
-  // Handle mouse wheel for zoom and pan
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      const delta = -e.deltaY;
-      const zoomFactor = 1.1;
-      const newZoom = delta > 0 ? zoom * zoomFactor : zoom / zoomFactor;
-
-      const clampedZoom = Math.min(Math.max(newZoom, 0.1), 5);
-
-      const mouseX = e.clientX;
-      const mouseY = e.clientY;
-      const canvasX = (mouseX - offset.x) / zoom;
-      const canvasY = (mouseY - offset.y) / zoom;
-
-      setOffset({
-        x: mouseX - canvasX * clampedZoom,
-        y: mouseY - canvasY * clampedZoom,
-      });
-      setZoom(clampedZoom);
+      clonedObj.setCoords();
     } else {
-      const deltaX = e.shiftKey ? e.deltaY : 0;
-      const deltaY = e.shiftKey ? 0 : e.deltaY;
-
-      setOffset((prev) => ({
-        x: prev.x - deltaX,
-        y: prev.y - deltaY,
-      }));
-    }
-    renderCanvas();
-  };
-
-  // Enhanced createRoughElement with all RoughJS options
-  const createRoughElement = (element: Element) => {
-    const rc = rough.canvas(canvasRef.current!);
-    const options = {
-      stroke: element.stroke || color,
-      strokeWidth: element.strokeWidth || strokeWidth,
-      roughness: roughness,
-      fill: element.fill || undefined,
-      fillStyle: element.fillStyle || fillStyle,
-      hachureAngle: element.hachureAngle || hachureAngle,
-      hachureGap: element.hachureGap || hachureGap,
-      fillWeight: strokeWidth / 2,
-      strokeLineDash: [],
-      bowing: 1,
-    };
-
-    const width = element.x2 - element.x1;
-    const height = element.y2 - element.y1;
-    const centerX = (element.x1 + element.x2) / 2;
-    const centerY = (element.y1 + element.y2) / 2;
-
-    switch (element.tool) {
-      case "rectangle":
-        return rc.rectangle(element.x1, element.y1, width, height, options);
-      case "diamond":
-        return rc.path(
-          `M ${centerX} ${element.y1} ` +
-            `L ${element.x2} ${centerY} ` +
-            `L ${centerX} ${element.y2} ` +
-            `L ${element.x1} ${centerY} ` +
-            `Z`,
-          options
-        );
-      case "arrow": {
-        const lineLength = Math.hypot(width, height);
-        const headLength = Math.min(lineLength * 0.3, 30);
-        const angle = Math.atan2(height, width);
-
-        const line = rc.line(
-          element.x1,
-          element.y1,
-          element.x2,
-          element.y2,
-          options
-        );
-
-        const head = rc.path(
-          `M ${element.x2} ${element.y2} ` +
-            `L ${element.x2 - headLength * Math.cos(angle - Math.PI / 6)} ` +
-            `${element.y2 - headLength * Math.sin(angle - Math.PI / 6)} ` +
-            `M ${element.x2} ${element.y2} ` +
-            `L ${element.x2 - headLength * Math.cos(angle + Math.PI / 6)} ` +
-            `${element.y2 - headLength * Math.sin(angle + Math.PI / 6)}`,
-          options
-        );
-
-        return { line, head };
-      }
-      case "ellipse":
-        return rc.ellipse(
-          centerX,
-          centerY,
-          Math.abs(width),
-          Math.abs(height),
-          options
-        );
-      case "line":
-        return rc.line(element.x1, element.y1, element.x2, element.y2, options);
-      default:
-        return null;
-    }
-  };
-
-  // Improved freehand selection detection using convex hull
-  const isPointInFreehand = (element: Element, x: number, y: number) => {
-    if (!element.points || element.points.length < 2) return false;
-    
-    if (element.convexHull && element.convexHull.length > 2) {
-      return isPointInConvexHull(element.convexHull, [x, y]);
-    }
-    
-    const canvas = canvasRef.current;
-    if (!canvas) return false;
-
-    const ctx = canvas.getContext("2d")!;
-    const pathData = PerfectFreehand.getStroke(element.points, {
-      size: element.strokeWidth || strokeWidth,
-      thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
-      smoothing: element.freehandOptions?.smoothing || freehandSettings.smoothing,
-      streamline: element.freehandOptions?.streamline || freehandSettings.streamline,
-      start: {
-        taper: element.freehandOptions?.taperStart || freehandSettings.taperStart,
-        cap: true,
-      },
-      end: {
-        taper: element.freehandOptions?.taperEnd || freehandSettings.taperEnd,
-        cap: true,
-      },
-    });
-
-    const path = new Path2D();
-    if (pathData.length > 0) {
-      path.moveTo(pathData[0][0], pathData[0][1]);
-      for (let i = 1; i < pathData.length; i++) {
-        path.lineTo(pathData[i][0], pathData[i][1]);
-      }
-      path.closePath();
+      fabricCanvas.add(clonedObj);
     }
 
-    return ctx.isPointInPath(path, x, y);
-  };
+    fabricCanvas.setActiveObject(clonedObj);
+    fabricCanvas.requestRenderAll();
+  });
+};
 
-  // Check if point is in element using RBush for spatial indexing
-  const isPointInElement = (element: Element, x: number, y: number) => {
-    if (element.tool === "freedraw") {
-      return isPointInFreehand(element, x, y);
-    } else if (element.tool === "text") {
-      const canvas = canvasRef.current;
-      if (!canvas) return false;
-      const ctx = canvas.getContext("2d")!;
-      ctx.font = "16px Arial";
-      const textWidth = element.text ? ctx.measureText(element.text).width : 0;
-      const textHeight = 20;
-      return (
-        x >= element.x1 &&
-        x <= element.x1 + textWidth &&
-        y >= element.y1 &&
-        y <= element.y1 + textHeight
-      );
+const deleteSelectedObjects = (fabricCanvas: fabric.Canvas): void => {
+  const activeObject = fabricCanvas.getActiveObject();
+  if (activeObject) {
+    if (activeObject.type === 'activeSelection') {
+      (activeObject as fabric.ActiveSelection).getObjects().forEach((obj: fabric.Object) => {
+        fabricCanvas.remove(obj);
+      });
     } else {
-      const minX = Math.min(element.x1, element.x2);
-      const maxX = Math.max(element.x1, element.x2);
-      const minY = Math.min(element.y1, element.y2);
-      const maxY = Math.max(element.y1, element.y2);
-      return x >= minX && x <= maxX && y >= minY && y <= maxY;
+      fabricCanvas.remove(activeObject);
     }
-  };
+    fabricCanvas.discardActiveObject();
+    fabricCanvas.requestRenderAll();
+  }
+};
 
-  // Find elements at point using RBush for broad-phase detection
-  const findElementsAtPosition = (x: number, y: number) => {
-    const results = rtreeRef.current.search({
-      minX: x,
-      minY: y,
-      maxX: x,
-      maxY: y
+const groupSelectedObjects = (fabricCanvas: fabric.Canvas): void => {
+  const activeObject = fabricCanvas.getActiveObject();
+  if (activeObject && activeObject.type === 'activeSelection') {
+    const group = (activeObject as fabric.ActiveSelection).toGroup();
+    fabricCanvas.setActiveObject(group);
+    fabricCanvas.requestRenderAll();
+  }
+};
+
+const ungroupSelectedObjects = (fabricCanvas: fabric.Canvas): void => {
+  const activeObject = fabricCanvas.getActiveObject();
+  if (activeObject && activeObject.type === 'group') {
+    const objects = (activeObject as fabric.Group).getObjects();
+    (activeObject as fabric.Group).toActiveSelection();
+    fabricCanvas.discardActiveObject();
+
+    const selection = new fabric.ActiveSelection(objects, {
+      canvas: fabricCanvas
     });
 
-    // Sort by zIndex (higher zIndex comes first)
-    return results
-      .map(result => elements.find(el => el.id === result.id))
-      .filter(el => el && isPointInElement(el, x, y))
-      .sort((a, b) => (b?.zIndex || 0) - (a?.zIndex || 0)) as Element[];
-  };
+    fabricCanvas.setActiveObject(selection);
+    fabricCanvas.requestRenderAll();
+  }
+};
 
-  // Check if element is in selection
-  const isElementInSelection = (element: Element, selection: Element) => {
-    const elementLeft = Math.min(element.x1, element.x2);
-    const elementRight = Math.max(element.x1, element.x2);
-    const elementTop = Math.min(element.y1, element.y2);
-    const elementBottom = Math.max(element.y1, element.y2);
+const saveToLocalStorage = (key: string, data: any): void => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (error) {
+    console.error('Error saving to localStorage:', error);
+  }
+};
 
-    const selectionLeft = Math.min(selection.x1, selection.x2);
-    const selectionRight = Math.max(selection.x1, selection.x2);
-    const selectionTop = Math.min(selection.y1, selection.y2);
-    const selectionBottom = Math.max(selection.y1, selection.y2);
+const loadFromLocalStorage = (key: string): any => {
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error('Error loading from localStorage:', error);
+    return null;
+  }
+};
 
-    return (
-      elementLeft < selectionRight &&
-      elementRight > selectionLeft &&
-      elementTop < selectionBottom &&
-      elementBottom > selectionTop
-    );
-  };
+// ====================== COMPONENTS ======================
+const ToolIcon = ({ iconName, ...props }: { iconName: string } & React.SVGProps<SVGSVGElement>) => {
+  const IconComponent = (LucideIcons as any)[iconName];
+  return IconComponent ? <IconComponent {...props} /> : null;
+};
 
-  // Render freehand drawing
-  const renderFreehand = (element: Element) => {
-    if (!element.points || element.points.length < 2) return;
-  
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-  
-    const ctx = canvas.getContext("2d")!;
-    if (!ctx) return;
-
-    ctx.globalAlpha = (element.opacity || opacity) / 100;
-
-    // For precise mode (when holding Shift)
-    // if (element.preciseMode) {
-    //   ctx.beginPath();
-    //   ctx.moveTo(element.points[0][0], element.points[0][1]);
-    //   for (let i = 1; i < element.points.length; i++) {
-    //     ctx.lineTo(element.points[i][0], element.points[i][1]);
-    //   }
-    //   ctx.strokeStyle = element.stroke || color;
-    //   ctx.lineWidth = element.strokeWidth || strokeWidth;
-    //   ctx.stroke();
-    //   return;
-    // }
-  
-    // // Normal perfect-freehand rendering
-    // const pathData = PerfectFreehand.getStroke(element.points, {
-    //   size: element.strokeWidth || strokeWidth,
-    //   thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
-    //   smoothing: element.freehandOptions?.smoothing || freehandSettings.smoothing,
-    //   streamline: element.freehandOptions?.streamline || freehandSettings.streamline,
-    //   start: {
-    //     taper: element.freehandOptions?.taperStart || freehandSettings.taperStart,
-    //     cap: true,
-    //   },
-    //   end: {
-    //     taper: element.freehandOptions?.taperEnd || freehandSettings.taperEnd,
-    //     cap: true,
-    //   },
-    // });
-    
-    // const path = new Path2D();
-    // if (pathData.length > 0) {
-    //   path.moveTo(pathData[0][0], pathData[0][1]);
-    //   for (let i = 1; i < pathData.length; i++) {
-    //     path.lineTo(pathData[i][0], pathData[i][1]);
-    //   }
-    //   path.closePath();
-    // }
-  
-    // ctx.fillStyle = element.stroke || color;
-    // ctx.fill(path);
-
-    const pathData = PerfectFreehand.getStroke(element.points, {
-      size: element.strokeWidth || strokeWidth,
-      thinning: element.freehandOptions?.thinning || freehandSettings.thinning,
-      smoothing: element.freehandOptions?.smoothing || freehandSettings.smoothing,
-      streamline: element.freehandOptions?.streamline || freehandSettings.streamline,
-      start: {
-        taper: element.freehandOptions?.taperStart || freehandSettings.taperStart,
-        cap: true,
-      },
-      end: {
-        taper: element.freehandOptions?.taperEnd || freehandSettings.taperEnd,
-        cap: true,
-      },
-    });
-    
-    const path = new Path2D();
-    if (pathData.length > 0) {
-      path.moveTo(pathData[0][0], pathData[0][1]);
-      for (let i = 1; i < pathData.length; i++) {
-        path.lineTo(pathData[i][0], pathData[i][1]);
-      }
-      path.closePath();
-    }
-  
-    ctx.fillStyle = element.stroke || color;
-    ctx.fill(path);
-  };
-
-  // Render text element
-  const renderText = (element: Element) => {
-    if (!element.text && !element.isEditing) return null;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
-    ctx.font = "16px Arial";
-    ctx.fillStyle = element.stroke || color;
-
-    if (element.isEditing) return;
-
-    ctx.fillText(element.text || "", element.x1, element.y1 + 16);
-  };
-
-  // Render label for any element
-  const renderLabel = (element: Element) => {
-    if (!element.label && !element.isLabelEditing) return null;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
-    ctx.font = "12px Arial";
-    ctx.fillStyle = element.stroke || color;
-
-    if (element.isLabelEditing) return;
-
-    const centerX = (element.x1 + element.x2) / 2;
-    const centerY = (element.y1 + element.y2) / 2;
-    const textWidth = ctx.measureText(element.label || "").width;
-    
-    ctx.fillText(element.label || "", centerX - textWidth / 2, centerY);
-  };
-
-  // Render selection box and handles with convex hull visualization for freehand
-  const renderSelection = (element: Element) => {
-    if (!selectedElements.some((el) => el.id === element.id)) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
-    ctx.save();
-    ctx.translate(offset.x, offset.y);
-    ctx.scale(zoom, zoom);
-
-    if (element.tool === 'freedraw' && element.convexHull && element.convexHull.length > 2) {
-      ctx.strokeStyle = "rgba(61, 126, 255, 0.5)";
-      ctx.lineWidth = 1 / zoom;
-      ctx.setLineDash([5, 5]);
-      
-      ctx.beginPath();
-      ctx.moveTo(element.convexHull[0][0], element.convexHull[0][1]);
-      for (let i = 1; i < element.convexHull.length; i++) {
-        ctx.lineTo(element.convexHull[i][0], element.convexHull[i][1]);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    const padding = 8;
-    const minX = Math.min(element.x1, element.x2) - padding;
-    const maxX = Math.max(element.x1, element.x2) + padding;
-    const minY = Math.min(element.y1, element.y2) - padding;
-    const maxY = Math.max(element.y1, element.y2) + padding;
-    const width = maxX - minX;
-    const height = maxY - minY;
-
-    ctx.strokeStyle = "#3d7eff";
-    ctx.lineWidth = 1 / zoom;
-    ctx.setLineDash([5, 5]);
-    ctx.strokeRect(minX, minY, width, height);
-    ctx.setLineDash([]);
-
-    const handleSize = 8 / zoom;
-    const handles = [
-      { x: minX, y: minY, position: "top-left" },
-      { x: minX + width / 2, y: minY, position: "top-center" },
-      { x: maxX, y: minY, position: "top-right" },
-      { x: maxX, y: minY + height / 2, position: "right-center" },
-      { x: maxX, y: maxY, position: "bottom-right" },
-      { x: minX + width / 2, y: maxY, position: "bottom-center" },
-      { x: minX, y: maxY, position: "bottom-left" },
-      { x: minX, y: minY + height / 2, position: "left-center" },
+const Toolbar: React.FC<{
+  activeTool: ToolType;
+  setActiveTool: (tool: ToolType) => void;
+  drawingMode: DrawingMode;
+  setDrawingMode: (mode: DrawingMode) => void;
+  currentColor: string;
+  setCurrentColor: (color: string) => void;
+  currentStrokeWidth: number;
+  setCurrentStrokeWidth: (width: number) => void;
+  roughness: number;
+  setRoughness: (value: number) => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
+  onDelete: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
+}> = ({
+  activeTool,
+  setActiveTool,
+  drawingMode,
+  setDrawingMode,
+  currentColor,
+  setCurrentColor,
+  currentStrokeWidth,
+  setCurrentStrokeWidth,
+  roughness,
+  setRoughness,
+  onZoomIn,
+  onZoomOut,
+  onCopy,
+  onPaste,
+  onDelete,
+  onGroup,
+  onUngroup
+}) => {
+    const tools: { id: ToolType, label: string, icon: string }[] = [
+      { id: 'select', label: 'Select', icon: 'MousePointer2' },
+      { id: 'rectangle', label: 'Rectangle', icon: 'RectangleHorizontal' },
+      { id: 'ellipse', label: 'Ellipse', icon: 'Circle' },
+      { id: 'diamond', label: 'Diamond', icon: 'Diamond' },
+      { id: 'arrow', label: 'Arrow', icon: 'ArrowRight' },
+      { id: 'bezier-arrow', label: 'Curved Arrow', icon: 'Curve' },
+      { id: 'line', label: 'Line', icon: 'Minus' },
+      { id: 'freehand', label: 'Freehand', icon: 'Pencil' },
+      { id: 'text', label: 'Text', icon: 'Type' }
     ];
 
-    ctx.fillStyle = "#3d7eff";
-    handles.forEach((handle) => {
-      ctx.beginPath();
-      ctx.arc(handle.x, handle.y, handleSize, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    ctx.restore();
-  };
-
-  // Render region selection (blue rectangle)
-  const renderRegionSelection = () => {
-    if (!currentElement || currentElement.tool !== "select" || !isDrawing) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
-    const minX = Math.min(currentElement.x1, currentElement.x2);
-    const maxX = Math.max(currentElement.x1, currentElement.x2);
-    const minY = Math.min(currentElement.y1, currentElement.y2);
-    const maxY = Math.max(currentElement.y1, currentElement.y2);
-    const width = maxX - minX;
-    const height = maxY - minY;
-
-    ctx.save();
-    ctx.translate(offset.x, offset.y);
-    ctx.scale(zoom, zoom);
-
-    ctx.strokeStyle = "#3d7eff";
-    ctx.lineWidth = 1 / zoom;
-    ctx.setLineDash([]);
-    ctx.strokeRect(minX, minY, width, height);
-
-    ctx.fillStyle = "rgba(61, 126, 255, 0.1)";
-    ctx.fillRect(minX, minY, width, height);
-
-    ctx.restore();
-  };
-
-  // Start resizing element
-  const startResizing = (
-    e: React.MouseEvent,
-    element: Element,
-    position: string
-  ) => {
-    e.stopPropagation();
-    setIsResizing(true);
-    setResizeStart({ x: e.clientX, y: e.clientY });
-    setResizeElement(element);
-    setResizePosition(position);
-  };
-
-  // Handle resizing element
-  const handleResizing = (e: MouseEvent) => {
-    if (!isResizing || !resizeElement) return;
-
-    const canvasCoords = screenToCanvas(e.clientX, e.clientY);
-    const { x: canvasX, y: canvasY } = canvasCoords;
-
-    const startCanvasCoords = screenToCanvas(resizeStart.x, resizeStart.y);
-    const { x: startX, y: startY } = startCanvasCoords;
-
-    let dx = canvasX - startX;
-    let dy = canvasY - startY;
-
-    if (e.shiftKey) {
-      const aspectRatio =
-        Math.abs(
-          (resizeElement.x2 - resizeElement.x1) /
-            (resizeElement.y2 - resizeElement.y1)
-        ) || 1;
-
-      switch (resizePosition) {
-        case "top-left":
-        case "bottom-right":
-          dy = (dx / aspectRatio) * (resizePosition === "top-left" ? -1 : 1);
-          break;
-        case "top-right":
-        case "bottom-left":
-          dy = (-dx / aspectRatio) * (resizePosition === "top-right" ? -1 : 1);
-          break;
-        case "left-center":
-        case "right-center":
-          dy = 0;
-          break;
-        case "top-center":
-        case "bottom-center":
-          dx = 0;
-          break;
-      }
-    }
-
-    setElements((prev) =>
-      prev.map((el) => {
-        if (
-          resizeElement.groupIds &&
-          resizeElement.groupIds.length > 0 &&
-          el.groupIds &&
-          el.groupIds.some((id) => resizeElement.groupIds?.includes(id))
-        ) {
-          const originalWidth = resizeElement.x2 - resizeElement.x1;
-          const originalHeight = resizeElement.y2 - resizeElement.y1;
-
-          let newX1 = el.x1;
-          let newY1 = el.y1;
-          let newX2 = el.x2;
-          let newY2 = el.y2;
-
-          let scaleX = 1;
-          let scaleY = 1;
-
-          switch (resizePosition) {
-            case "top-left":
-              scaleX = (originalWidth - dx) / originalWidth;
-              scaleY = (originalHeight - dy) / originalHeight;
-              newX1 = resizeElement.x1 + dx;
-              newY1 = resizeElement.y1 + dy;
-              break;
-            case "top-center":
-              scaleY = (originalHeight - dy) / originalHeight;
-              newY1 = resizeElement.y1 + dy;
-              break;
-            case "top-right":
-              scaleX = (originalWidth + dx) / originalWidth;
-              scaleY = (originalHeight - dy) / originalHeight;
-              newX2 = resizeElement.x2 + dx;
-              newY1 = resizeElement.y1 + dy;
-              break;
-            case "right-center":
-              scaleX = (originalWidth + dx) / originalWidth;
-              newX2 = resizeElement.x2 + dx;
-              break;
-            case "bottom-right":
-              scaleX = (originalWidth + dx) / originalWidth;
-              scaleY = (originalHeight + dy) / originalHeight;
-              newX2 = resizeElement.x2 + dx;
-              newY2 = resizeElement.y2 + dy;
-              break;
-            case "bottom-center":
-              scaleY = (originalHeight + dy) / originalHeight;
-              newY2 = resizeElement.y2 + dy;
-              break;
-            case "bottom-left":
-              scaleX = (originalWidth - dx) / originalWidth;
-              scaleY = (originalHeight + dy) / originalHeight;
-              newX1 = resizeElement.x1 + dx;
-              newY2 = resizeElement.y2 + dy;
-              break;
-            case "left-center":
-              scaleX = (originalWidth - dx) / originalWidth;
-              newX1 = resizeElement.x1 + dx;
-              break;
-          }
-
-          const relativeX1 = (el.x1 - resizeElement.x1) * scaleX;
-          const relativeY1 = (el.y1 - resizeElement.y1) * scaleY;
-          const relativeX2 = (el.x2 - resizeElement.x1) * scaleX;
-          const relativeY2 = (el.y2 - resizeElement.y1) * scaleY;
-
-          const updatedElement = {
-            ...el,
-            x1: resizeElement.x1 + relativeX1,
-            y1: resizeElement.y1 + relativeY1,
-            x2: resizeElement.x1 + relativeX2,
-            y2: resizeElement.y1 + relativeY2,
-            roughElement: [
-              "rectangle",
-              "ellipse",
-              "line",
-              "arrow",
-              "diamond",
-            ].includes(el.tool)
-              ? createRoughElement({
-                  ...el,
-                  x1: resizeElement.x1 + relativeX1,
-                  y1: resizeElement.y1 + relativeY1,
-                  x2: resizeElement.x1 + relativeX2,
-                  y2: resizeElement.y1 + relativeY2,
-                })
-              : undefined,
-          };
-
-          if (el.tool === 'freedraw' && el.points) {
-            const scaledPoints = el.points.map(([px, py]) => {
-              const relativeX = (px - el.x1) * scaleX;
-              const relativeY = (py - el.y1) * scaleY;
-              return [updatedElement.x1 + relativeX, updatedElement.y1 + relativeY] as Point;
-            });
-            updatedElement.points = scaledPoints;
-            if (scaledPoints.length > 2) {
-              updatedElement.convexHull = calculateConvexHull(scaledPoints);
-              updatedElement.boundingBox = calculateBoundingBox(scaledPoints);
-            }
-          }
-
-          return updatedElement;
-        }
-
-        if (el.id === resizeElement.id) {
-          let newX1 = el.x1;
-          let newY1 = el.y1;
-          let newX2 = el.x2;
-          let newY2 = el.y2;
-
-          switch (resizePosition) {
-            case "top-left":
-              newX1 = el.x1 + dx;
-              newY1 = el.y1 + dy;
-              break;
-            case "top-center":
-              newY1 = el.y1 + dy;
-              break;
-            case "top-right":
-              newX2 = el.x2 + dx;
-              newY1 = el.y1 + dy;
-              break;
-            case "right-center":
-              newX2 = el.x2 + dx;
-              break;
-            case "bottom-right":
-              newX2 = el.x2 + dx;
-              newY2 = el.y2 + dy;
-              break;
-            case "bottom-center":
-              newY2 = el.y2 + dy;
-              break;
-            case "bottom-left":
-              newX1 = el.x1 + dx;
-              newY2 = el.y2 + dy;
-              break;
-            case "left-center":
-              newX1 = el.x1 + dx;
-              break;
-          }
-
-          const updatedElement = {
-            ...el,
-            x1: newX1,
-            y1: newY1,
-            x2: newX2,
-            y2: newY2,
-            roughElement: [
-              "rectangle",
-              "ellipse",
-              "line",
-              "arrow",
-              "diamond",
-            ].includes(el.tool)
-              ? createRoughElement({
-                  ...el,
-                  x1: newX1,
-                  y1: newY1,
-                  x2: newX2,
-                  y2: newY2,
-                })
-              : undefined,
-          };
-
-          if (el.tool === "freedraw" && el.points) {
-            const originalWidth = Math.abs(el.x2 - el.x1);
-            const originalHeight = Math.abs(el.y2 - el.y1);
-            const newWidth = Math.abs(newX2 - newX1);
-            const newHeight = Math.abs(newY2 - newY1);
-
-            const scaleX = originalWidth !== 0 ? newWidth / originalWidth : 1;
-            const scaleY =
-              originalHeight !== 0 ? newHeight / originalHeight : 1;
-
-            const scaledPoints = el.points.map(([px, py]) => {
-              const relativeX = (px - el.x1) * scaleX;
-              const relativeY = (py - el.y1) * scaleY;
-              return [newX1 + relativeX, newY1 + relativeY] as Point;
-            });
-
-            updatedElement.points = scaledPoints;
-            if (scaledPoints.length > 2) {
-              updatedElement.convexHull = calculateConvexHull(scaledPoints);
-              updatedElement.boundingBox = calculateBoundingBox(scaledPoints);
-            }
-          }
-
-          return updatedElement;
-        }
-        return el;
-      })
-    );
-
-    setResizeStart({ x: e.clientX, y: e.clientY });
-  };
-
-  // Stop resizing element
-  const stopResizing = () => {
-    setIsResizing(false);
-    setResizeElement(null);
-    setResizePosition("");
-    pushToHistory(elements);
-  };
-
-  // Start moving element
-  const startMoving = (e: React.MouseEvent) => {
-    const { clientX: x, clientY: y } = e;
-    setIsMoving(true);
-    setMoveStart({ x, y });
-  };
-
-  // Handle moving element
-  const handleMoving = (e: MouseEvent) => {
-    if (!isMoving || selectedElements.length === 0) return;
- 
-    const dx = (e.clientX - moveStart.x) / zoom;
-    const dy = (e.clientY - moveStart.y) / zoom;
- 
-    setElements(prev => prev.map(el => {
-      const isSelected = selectedElements.some(sel => sel.id === el.id);
-      const isInGroup = selectedElements.some(sel => 
-        sel.groupIds && el.groupIds && 
-        sel.groupIds.some(groupId => el.groupIds.includes(groupId))
-      );
- 
-      if (isSelected || isInGroup) {
-        const updatedElement = {
-          ...el,
-          x1: el.x1 + dx,
-          y1: el.y1 + dy,
-          x2: el.x2 + dx,
-          y2: el.y2 + dy,
-          roughElement: [
-            "rectangle",
-            "ellipse",
-            "line",
-            "arrow",
-            "diamond",
-          ].includes(el.tool)
-            ? createRoughElement({
-                ...el,
-                x1: el.x1 + dx,
-                y1: el.y1 + dy,
-                x2: el.x2 + dx,
-                y2: el.y2 + dy
-              })
-            : undefined,
-        };
-
-        if (el.tool === 'freedraw') {
-          const movedPoints = transformPoints(el.points || [], dx, dy);
-          updatedElement.points = movedPoints;
-          if (movedPoints.length > 2) {
-            updatedElement.convexHull = calculateConvexHull(movedPoints);
-            updatedElement.boundingBox = calculateBoundingBox(movedPoints);
-          }
-        }
-
-        return updatedElement;
-      }
-      return el;
-    }));
- 
-    setMoveStart({ x: e.clientX, y: e.clientY });
-  };
-
-  // Stop moving element
-  const stopMoving = () => {
-    setIsMoving(false);
-    pushToHistory(elements);
-  };
-
-  // Handle eraser mouse down with RBush filtering and opacity decay
-  const handleEraserMouseDown = (x: number, y: number) => {
-    const canvasCoords = screenToCanvas(x, y);
-    const { x: canvasX, y: canvasY } = canvasCoords;
-
-    const elementsAtPos = findElementsAtPosition(canvasX, canvasY);
-    
-    if (elementsAtPos.length > 0) {
-      setIsErasing(true);
-      setElementsToErase(elementsAtPos);
-      setElements(prev => prev.map(el => {
-        if (elementsAtPos.some(e => e.id === el.id)) {
-          return {
-            ...el,
-            originalOpacity: el.opacity,
-            opacity: (el.opacity || opacity) / 2
-          };
-        }
-        return el;
-      }));
-    }
-  };
-
-  // Handle eraser mouse move with RBush filtering
-  const handleEraserMouseMove = (x: number, y: number) => {
-    if (!isErasing) return;
-    
-    const canvasCoords = screenToCanvas(x, y);
-    const { x: canvasX, y: canvasY } = canvasCoords;
-
-    const elementsAtPos = findElementsAtPosition(canvasX, canvasY);
-    
-    const newElementsToErase = [...new Set([...elementsToErase, ...elementsAtPos])];
-    setElementsToErase(newElementsToErase);
-    
-    setElements(prev => prev.map(el => {
-      if (newElementsToErase.some(e => e.id === el.id)) {
-        return {
-          ...el,
-          originalOpacity: el.originalOpacity || el.opacity,
-          opacity: (el.originalOpacity || el.opacity || opacity) / 2
-        };
-      }
-      return el;
-    }));
-  };
-
-  // Handle eraser mouse up with final deletion
-  const handleEraserMouseUp = () => {
-    if (!isErasing) return;
-    
-    setElementsWithHistory(elements.filter(el => !elementsToErase.some(e => e.id === el.id)));
-    
-    setIsErasing(false);
-    setElementsToErase([]);
-  };
-
-  // Set up event listeners for resizing and moving
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener("mousemove", handleResizing);
-      window.addEventListener("mouseup", stopResizing);
-      return () => {
-        window.removeEventListener("mousemove", handleResizing);
-        window.removeEventListener("mouseup", stopResizing);
-      };
-    }
-  }, [isResizing, resizeElement, resizePosition, resizeStart]);
-
-  useEffect(() => {
-    if (isMoving) {
-      window.addEventListener("mousemove", handleMoving);
-      window.addEventListener("mouseup", stopMoving);
-      return () => {
-        window.removeEventListener("mousemove", handleMoving);
-        window.removeEventListener("mouseup", stopMoving);
-      };
-    }
-  }, [isMoving, selectedElements, moveStart]);
-
-  // Render grid
-  const renderGrid = () => {
-    if (!showGrid) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
-    ctx.save();
-    ctx.translate(offset.x, offset.y);
-    ctx.scale(zoom, zoom);
-
-    const dotSize = 1 + gridContrast * 2;
-    const dotColor = `rgba(224, 224, 224, ${0.2 + gridContrast * 0.4})`;
-    const startX = Math.floor(-offset.x / (zoom * gridSize)) * gridSize;
-    const startY = Math.floor(-offset.y / (zoom * gridSize)) * gridSize;
-    const endX = startX + dimensions.width / zoom + gridSize;
-    const endY = startY + dimensions.height / zoom + gridSize;
-
-    ctx.fillStyle = dotColor;
-    for (let x = startX; x < endX; x += gridSize) {
-      for (let y = startY; y < endY; y += gridSize) {
-        ctx.beginPath();
-        ctx.arc(x, y, dotSize, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    ctx.restore();
-  };
-
-  // Render preview with highlighted region
-  const renderPreview = useCallback(() => {
-    const canvas = previewRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const viewportWidth = dimensions.width / zoom;
-    const viewportHeight = dimensions.height / zoom;
-    const viewportX = -offset.x / zoom;
-    const viewportY = -offset.y / zoom;
-
-    ctx.save();
-    ctx.scale(
-      canvas.width / dimensions.width,
-      canvas.height / dimensions.height
-    );
-    ctx.translate(-viewportX, -viewportY);
-
-    // Sort elements by zIndex for proper rendering order
-    const sortedElements = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-
-    sortedElements.forEach((element) => {
-      ctx.globalAlpha = (element.opacity || opacity) / 100;
-
-      switch (element.tool) {
-        case "rectangle":
-        case "ellipse":
-        case "line":
-        case "arrow":
-        case "diamond":
-          if (element.roughElement) {
-            const rc = rough.canvas(canvas);
-            if (
-              element.tool === "arrow" &&
-              element.roughElement.line &&
-              element.roughElement.head
-            ) {
-              rc.draw(element.roughElement.line);
-              rc.draw(element.roughElement.head);
-            } else {
-              rc.draw(element.roughElement);
-            }
-          }
-          break;
-        case "freedraw":
-          renderFreehand(element);
-          break;
-        case "text":
-          renderText(element);
-          break;
-      }
-    });
-
-    // Draw highlighted viewport region
-    ctx.strokeStyle = "#3d7eff";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.strokeRect(viewportX, viewportY, viewportWidth, viewportHeight);
-    ctx.setLineDash([]);
-
-    // Fill the viewport region with semi-transparent color
-    ctx.fillStyle = "rgba(61, 126, 255, 0.1)";
-    ctx.fillRect(viewportX, viewportY, viewportWidth, viewportHeight);
-
-    ctx.restore();
-  }, [elements, zoom, offset, dimensions, opacity]);
-
-  // Optimized canvas rendering with requestAnimationFrame
-  const renderCanvas = useCallback(() => {
-    if (renderRequestRef.current) {
-      cancelAnimationFrame(renderRequestRef.current);
-    }
-
-    renderRequestRef.current = requestAnimationFrame(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const ctx = canvas.getContext("2d")!;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Render grid if enabled
-      if (showGrid) {
-        renderGrid();
-      }
-
-      ctx.save();
-      ctx.translate(offset.x, offset.y);
-      ctx.scale(zoom, zoom);
-
-      // Sort elements by zIndex for proper rendering order
-      const sortedElements = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-
-      sortedElements.forEach((element) => {
-        ctx.globalAlpha = (element.opacity || opacity) / 100;
-
-        switch (element.tool) {
-          case "rectangle":
-          case "ellipse":
-          case "line":
-          case "arrow":
-          case "diamond":
-            if (element.roughElement) {
-              const rc = rough.canvas(canvas);
-              if (
-                element.tool === "arrow" &&
-                element.roughElement.line &&
-                element.roughElement.head
-              ) {
-                rc.draw(element.roughElement.line);
-                rc.draw(element.roughElement.head);
-              } else {
-                rc.draw(element.roughElement);
-              }
-            }
-            break;
-          case "freedraw":
-            renderFreehand(element);
-            break;
-          case "text":
-            renderText(element);
-            break;
-        }
-
-        // Render label for any element
-        renderLabel(element);
-        renderSelection(element);
-      });
-
-      if (currentElement) {
-        ctx.globalAlpha = (currentElement.opacity || opacity) / 100;
-
-        switch (currentElement.tool) {
-          case "rectangle":
-          case "ellipse":
-          case "line":
-          case "arrow":
-          case "diamond":
-            const roughElement = createRoughElement(currentElement);
-            if (roughElement) {
-              const rc = rough.canvas(canvas);
-              if (
-                currentElement.tool === "arrow" &&
-                roughElement.line &&
-                roughElement.head
-              ) {
-                rc.draw(roughElement.line);
-                rc.draw(roughElement.head);
-              } else {
-                rc.draw(roughElement);
-              }
-            }
-            break;
-          case "freedraw":
-            renderFreehand(currentElement);
-            break;
-        }
-      }
-
-      ctx.restore();
-
-      renderRegionSelection();
-
-      renderPreview();
-    });
-  }, [
-    elements,
-    currentElement,
-    selectedElements,
-    zoom,
-    offset,
-    opacity,
-    showGrid,
-    gridSize,
-    gridContrast,
-    renderPreview,
-  ]);
-
-  // Update canvas when dependencies change
-  useEffect(() => {
-    renderCanvas();
-  }, [
-    elements,
-    currentElement,
-    selectedElements,
-    zoom,
-    offset,
-    opacity,
-    showGrid,
-    gridSize,
-    gridContrast,
-    renderCanvas,
-  ]);
-
-  // Clean up animation frame on unmount
-  useEffect(() => {
-    return () => {
-      if (renderRequestRef.current) {
-        cancelAnimationFrame(renderRequestRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const observer = new ResizeObserver(() => {
-      setDimensions({
-        width: window.innerWidth,
-        height: window.innerHeight
-      });
-      renderCanvas(); // Redraw on resize
-    });
-  
-    observer.observe(document.body);
-    return () => observer.disconnect();
-  }, [renderCanvas]);
-
-  // Handle text element click
-  const handleTextElementClick = (element: Element) => {
-    if (currentTool === "select" && element.tool === "text") {
-      setElements((prev) =>
-        prev.map((el) =>
-          el.id === element.id ? { ...el, isEditing: true } : el
-        )
-      );
-      setTimeout(() => {
-        if (textInputRef.current) {
-          textInputRef.current.focus();
-          textInputRef.current.select();
-        }
-      }, 0);
-    }
-  };
-
-  // Handle label editing
-  const handleLabelEdit = (element: Element) => {
-    setElements((prev) =>
-      prev.map((el) =>
-        el.id === element.id ? { ...el, isLabelEditing: true } : el
-      )
-    );
-    setTimeout(() => {
-      if (labelInputRef.current) {
-        labelInputRef.current.focus();
-        labelInputRef.current.select();
-      }
-    }, 0);
-  };
-
-  // Handle text blur
-  const handleTextBlur = (element: Element) => {
-    setElements((prev) =>
-      prev.map((el) =>
-        el.id === element.id ? { ...el, isEditing: false } : el
-      )
-    );
-    pushToHistory(elements);
-  };
-
-  // Handle label blur
-  const handleLabelBlur = (element: Element) => {
-    setElements((prev) =>
-      prev.map((el) =>
-        el.id === element.id ? { ...el, isLabelEditing: false } : el
-      )
-    );
-    pushToHistory(elements);
-  };
-
-  // Handle text change
-  const handleTextChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    element: Element
-  ) => {
-    const newText = e.target.value;
-    setElements((prev) =>
-      prev.map((el) => (el.id === element.id ? { ...el, text: newText } : el))
-    );
-  };
-
-  // Handle label change
-  const handleLabelChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    element: Element
-  ) => {
-    const newLabel = e.target.value;
-    setElements((prev) =>
-      prev.map((el) => (el.id === element.id ? { ...el, label: newLabel } : el))
-    );
-  };
-
-  // Pan functionality
-  const pan = (direction: "left" | "right" | "up" | "down") => {
-    const distance = 50;
-    setOffset((prev) => ({
-      x:
-        prev.x +
-        (direction === "left"
-          ? -distance
-          : direction === "right"
-          ? distance
-          : 0),
-      y:
-        prev.y +
-        (direction === "up" ? -distance : direction === "down" ? distance : 0),
-    }));
-  };
-
-  // Delete selected elements
-  const deleteSelected = () => {
-    if (selectedElements.length === 0) return;
-    setElementsWithHistory(
-      elements.filter((el) => !selectedElements.some((sel) => sel.id === el.id))
-    );
-    setSelectedElements([]);
-  };
-
-  // Copy selected elements
-  const copySelected = () => {
-    if (selectedElements.length === 0) return;
-    setCopiedElements(selectedElements);
-  };
-
-  // Paste elements with proper scaling and transformation
-  const pasteElements = () => {
-    if (copiedElements.length === 0) return;
-  
-    const offsetX = 20;
-    const offsetY = 20;
-    
-    // Calculate bounding box of copied elements
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    copiedElements.forEach(el => {
-      minX = Math.min(minX, el.x1, el.x2);
-      minY = Math.min(minY, el.y1, el.y2);
-      maxX = Math.max(maxX, el.x1, el.x2);
-      maxY = Math.max(maxY, el.y1, el.y2);
-    });
-    
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-    
-    // Get the highest zIndex in current elements
-    const maxZIndex = elements.reduce((max, el) => Math.max(max, el.zIndex || 0), 0);
-    
-    const newElements = copiedElements.map((el) => {
-      const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-      
-      // Calculate relative position from center
-      const relX1 = el.x1 - centerX;
-      const relY1 = el.y1 - centerY;
-      const relX2 = el.x2 - centerX;
-      const relY2 = el.y2 - centerY;
-      
-      // Apply offset from center
-      const newX1 = centerX + relX1 + offsetX;
-      const newY1 = centerY + relY1 + offsetY;
-      const newX2 = centerX + relX2 + offsetX;
-      const newY2 = centerY + relY2 + offsetY;
-      
-      const newElement = {
-        ...el,
-        id,
-        x1: newX1,
-        y1: newY1,
-        x2: newX2,
-        y2: newY2,
-        zIndex: maxZIndex + 1, // Place pasted elements on top
-      };
-  
-      if (el.tool === 'freedraw' && el.points) {
-        newElement.points = transformPoints(el.points, offsetX, offsetY);
-        if (el.convexHull) {
-          newElement.convexHull = transformPoints(el.convexHull, offsetX, offsetY);
-        }
-        if (el.boundingBox) {
-          newElement.boundingBox = {
-            minX: el.boundingBox.minX + offsetX,
-            minY: el.boundingBox.minY + offsetY,
-            maxX: el.boundingBox.maxX + offsetX,
-            maxY: el.boundingBox.maxY + offsetY
-          };
-        }
-      } else {
-        newElement.roughElement = createRoughElement(newElement);
-      }
-  
-      return newElement;
-    });
-  
-    setElementsWithHistory([...elements, ...newElements]);
-    setSelectedElements(newElements);
-  };
-
-  // Group selected elements
-  const groupSelected = () => {
-    if (selectedElements.length < 2) return;
-
-    const groupId = Date.now().toString();
-    setGroupIds((prev) => new Set([...prev, groupId]));
-
-    setElements((prev) =>
-      prev.map((el) =>
-        selectedElements.some((sel) => sel.id === el.id)
-          ? { 
-              ...el, 
-              groupIds: [...(el.groupIds || []), groupId],
-              // Maintain selection state for grouped elements
-              isSelected: true
-            }
-          : el
-      )
-    );
-    
-    // Update selected elements to include the group ID
-    setSelectedElements(prev => 
-      prev.map(el => ({
-        ...el,
-        groupIds: [...(el.groupIds || []), groupId]
-      }))
-    );
-  };
-
-  // Ungroup selected elements
-  const ungroupSelected = () => {
-    if (selectedElements.length === 0) return;
-
-    // Get all group IDs from selected elements
-    const groupIdsToUngroup = new Set<string>();
-    selectedElements.forEach(el => {
-      if (el.groupIds) {
-        el.groupIds.forEach(id => groupIdsToUngroup.add(id));
-      }
-    });
-
-    if (groupIdsToUngroup.size === 0) return;
-
-    // Remove group IDs from all elements that have them
-    setElements(prev =>
-      prev.map(el => {
-        if (el.groupIds && el.groupIds.some(id => groupIdsToUngroup.has(id))) {
-          const newGroupIds = el.groupIds.filter(id => !groupIdsToUngroup.has(id));
-          return {
-            ...el,
-            groupIds: newGroupIds.length > 0 ? newGroupIds : undefined
-          };
-        }
-        return el;
-      })
-    );
-
-    // Update the group IDs set
-    setGroupIds(prev => {
-      const newSet = new Set(prev);
-      groupIdsToUngroup.forEach(id => newSet.delete(id));
-      return newSet;
-    });
-
-    // Keep the same elements selected after ungrouping
-    setSelectedElements(prev =>
-      prev.map(el => ({
-        ...el,
-        groupIds: el.groupIds?.filter(id => !groupIdsToUngroup.has(id))
-      }))
-    );
-  };
-
-  // Bring selected elements to front
-  const bringToFront = () => {
-    if (selectedElements.length === 0) return;
-
-    // Get the highest zIndex in the current elements
-    const maxZIndex = elements.reduce((max, el) => Math.max(max, el.zIndex || 0), 0);
-
-    setElements(prev => {
-      let currentZIndex = maxZIndex + 1;
-      return prev.map(el => {
-        if (selectedElements.some(sel => sel.id === el.id)) {
-          return {
-            ...el,
-            zIndex: currentZIndex++
-          };
-        }
-        return el;
-      });
-    });
-
-    pushToHistory(elements);
-  };
-
-  // Send selected elements to back
-  const sendToBack = () => {
-    if (selectedElements.length === 0) return;
-
-    // Get the lowest zIndex in the current elements
-    const minZIndex = elements.reduce((min, el) => Math.min(min, el.zIndex || 0), 0);
-
-    setElements(prev => {
-      let currentZIndex = minZIndex - 1;
-      return prev.map(el => {
-        if (selectedElements.some(sel => sel.id === el.id)) {
-          return {
-            ...el,
-            zIndex: currentZIndex--
-          };
-        }
-        return el;
-      });
-    });
-
-    pushToHistory(elements);
-  };
-
-  // Clear all elements from canvas and localStorage
-  const clearCanvas = () => {
-    if (window.confirm("Are you sure you want to clear the canvas?")) {
-      setElements([]);
-      setSelectedElements([]);
-      setHistory([[]]);
-      setHistoryIndex(0);
-      localStorage.removeItem("excalidraw-data");
-    }
-  };
-
-  // Export to PNG
-  const exportPNG = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const tempCanvas = document.createElement("canvas");
-    tempCanvas.width = dimensions.width;
-    tempCanvas.height = dimensions.height;
-    const tempCtx = tempCanvas.getContext("2d");
-    if (!tempCtx) return;
-
-    tempCtx.fillStyle = "white";
-    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-    tempCtx.save();
-    tempCtx.translate(offset.x, offset.y);
-    tempCtx.scale(zoom, zoom);
-
-    // Sort elements by zIndex for proper rendering order
-    const sortedElements = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-
-    const rc = rough.canvas(tempCanvas);
-    sortedElements.forEach((element) => {
-      tempCtx.globalAlpha = (element.opacity || opacity) / 100;
-
-      if (element.roughElement) {
-        if (
-          element.tool === "arrow" &&
-          element.roughElement.line &&
-          element.roughElement.head
-        ) {
-          rc.draw(element.roughElement.line);
-          rc.draw(element.roughElement.head);
-        } else {
-          rc.draw(element.roughElement);
-        }
-      } else if (element.tool === "freedraw" && element.points) {
-        const pathData = PerfectFreehand.getStroke(element.points, {
-          size: element.strokeWidth || strokeWidth,
-          thinning:
-            element.freehandOptions?.thinning || freehandSettings.thinning,
-          smoothing:
-            element.freehandOptions?.smoothing || freehandSettings.smoothing,
-          streamline:
-            element.freehandOptions?.streamline || freehandSettings.streamline,
-          start: {
-            taper:
-              element.freehandOptions?.taperStart ||
-              freehandSettings.taperStart,
-            cap: true,
-          },
-          end: {
-            taper:
-              element.freehandOptions?.taperEnd || freehandSettings.taperEnd,
-            cap: true,
-          },
-        });
-        const path = new Path2D();
-        path.moveTo(pathData[0][0], pathData[0][1]);
-        for (let i = 1; i < pathData.length; i++) {
-          path.lineTo(pathData[i][0], pathData[i][1]);
-        }
-        tempCtx.fillStyle = element.stroke || color;
-        tempCtx.fill(path);
-      } else if (element.tool === "text" && element.text) {
-        tempCtx.font = "16px Arial";
-        tempCtx.fillStyle = element.stroke || color;
-        tempCtx.fillText(element.text, element.x1, element.y1 + 16);
-      } else if (element.label) {
-        tempCtx.font = "12px Arial";
-        tempCtx.fillStyle = element.stroke || color;
-        const centerX = (element.x1 + element.x2) / 2;
-        const centerY = (element.y1 + element.y2) / 2;
-        const textWidth = tempCtx.measureText(element.label).width;
-        tempCtx.fillText(element.label, centerX - textWidth / 2, centerY);
-      }
-    });
-
-    tempCtx.restore();
-
-    const link = document.createElement("a");
-    link.download = `drawing-${new Date().toISOString().slice(0, 10)}.png`;
-    link.href = tempCanvas.toDataURL("image/png");
-    link.click();
-  };
-
-  // Generate share URL
-  const generateShareUrl = () => {
-    if (!peerId) return "";
-    return `${window.location.origin}${window.location.pathname}?peer=${peerId}`;
-  };
-
-  // Copy share URL
-  const copyShareUrl = () => {
-    const url = generateShareUrl();
-    if (url) {
-      navigator.clipboard.writeText(url);
-      alert("Share URL copied to clipboard!");
-    }
-  };
-
-  // Handle mouse down
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isResizing) return;
-
-    const { clientX: x, clientY: y } = e;
-
-    if (currentTool === "pan") {
-      setIsPanning(true);
-      setPanStart({ x, y });
-      return;
-    }
-
-    if (currentTool === "eraser") {
-      handleEraserMouseDown(x, y);
-      return;
-    }
-
-    const canvasCoords = screenToCanvas(x, y);
-    const { x: canvasX, y: canvasY } = canvasCoords;
-
-    // Check if clicking on a resize handle
-    if (selectedElements.length === 1) {
-      const element = selectedElements[0];
-      const padding = 8;
-      const minX = Math.min(element.x1, element.x2) - padding;
-      const maxX = Math.max(element.x1, element.x2) + padding;
-      const minY = Math.min(element.y1, element.y2) - padding;
-      const maxY = Math.max(element.y1, element.y2) + padding;
-      const width = maxX - minX;
-      const height = maxY - minY;
-
-      const handles = [
-        { x: minX, y: minY, position: "top-left", area: new Path2D() },
-        {
-          x: minX + width / 2,
-          y: minY,
-          position: "top-center",
-          area: new Path2D(),
-        },
-        { x: maxX, y: minY, position: "top-right", area: new Path2D() },
-        {
-          x: maxX,
-          y: minY + height / 2,
-          position: "right-center",
-          area: new Path2D(),
-        },
-        { x: maxX, y: maxY, position: "bottom-right", area: new Path2D() },
-        {
-          x: minX + width / 2,
-          y: maxY,
-          position: "bottom-center",
-          area: new Path2D(),
-        },
-        { x: minX, y: maxY, position: "bottom-left", area: new Path2D() },
-        {
-          x: minX,
-          y: minY + height / 2,
-          position: "left-center",
-          area: new Path2D(),
-        },
-      ];
-
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext("2d")!;
-        const handleSize = 8 / zoom;
-
-        for (const handle of handles) {
-          handle.area.arc(handle.x, handle.y, handleSize * 2, 0, Math.PI * 2);
-          if (ctx.isPointInPath(handle.area, canvasX, canvasY)) {
-            startResizing(e, element, handle.position);
-            return;
-          }
-        }
-      }
-    }
-
-    if (currentTool === "select") {
-      const canvasCoords = screenToCanvas(e.clientX, e.clientY);
-      const { x: canvasX, y: canvasY } = canvasCoords;
-
-      const element = findElementsAtPosition(canvasX, canvasY)[0];
-
-      if (element) {
-        if (element.tool === "text") {
-          handleTextElementClick(element);
-        }
-
-        // Check for double click to add label
-        const now = Date.now();
-        if (now - lastClickTime < 300) { // 300ms threshold for double click
-          handleLabelEdit(element);
-          setLastClickTime(0);
-        } else {
-          setLastClickTime(now);
-        }
-
-        setSelectedElements((prev) => {
-          const isAlreadySelected = prev.some(
-            (sel) =>
-              sel.id === element.id ||
-              (element.groupIds &&
-                element.groupIds.some((id) => sel.groupIds?.includes(id)))
-          );
-
-          if (e.shiftKey) {
-            return isAlreadySelected
-              ? prev.filter(
-                  (sel) =>
-                    sel.id !== element.id &&
-                    !(
-                      element.groupIds &&
-                      element.groupIds.some((id) => sel.groupIds?.includes(id))
-              ) 
-              ) : [...prev, element];
-          } else {
-            if (isAlreadySelected) {
-              startMoving(e);
-              return prev;
-            } else {
-              // If the element is part of a group, select all elements in that group
-              if (element.groupIds && element.groupIds.length > 0) {
-                const groupElements = elements.filter((el) =>
-                  el.groupIds?.some((id) => element.groupIds?.includes(id))
-                );
-                return groupElements;
-              } else {
-                return [element];
-              }
-            }
-          }
-        });
-
-        if (selectedElements.some((sel) => sel.id === element.id)) {
-          startMoving(e);
-        }
-        return;
-      }
-
-      if (!e.shiftKey) {
-        setSelectedElements([]);
-      }
-
-      setIsDrawing(true);
-      setCurrentElement({
-        id: Date.now().toString(),
-        x1: canvasX,
-        y1: canvasY,
-        x2: canvasX,
-        y2: canvasY,
-        tool: "rectangle",
-        stroke: "#3d7eff",
-        strokeWidth: 1 / zoom,
-        opacity: 30,
-      });
-      return;
-    }
-
-    if (currentTool === "text") {
-      const id = Date.now().toString();
-      const newElement: Element = {
-        id,
-        x1: canvasX,
-        y1: canvasY,
-        x2: canvasX + 100,
-        y2: canvasY + 20,
-        tool: "text",
-        text: "",
-        isEditing: true,
-        stroke: color,
-        strokeWidth,
-        opacity,
-        zIndex: elements.length > 0 ? 
-          Math.max(...elements.map(el => el.zIndex || 0)) + 1 : 0
-      };
-      setElementsWithHistory([...elements, newElement]);
-      setSelectedElements([newElement]);
-      return;
-    }
-
-    setIsDrawing(true);
-    const id = Date.now().toString();
-
-    if (currentTool === "freedraw") {
-      setCurrentElement({
-        id,
-        x1: canvasX,
-        y1: canvasY,
-        x2: canvasX,
-        y2: canvasY,
-        points: [[canvasX, canvasY]],
-        originalPoints: [[canvasX, canvasY]],
-        tool: currentTool,
-        freehandOptions: {
-          size: strokeWidth,
-          thinning: e.shiftKey ? 0 : freehandSettings.thinning,
-          smoothing: e.shiftKey ? 0 : freehandSettings.smoothing,
-          streamline: e.shiftKey ? 0 : freehandSettings.streamline,
-          taperStart: freehandSettings.taperStart,
-          taperEnd: freehandSettings.taperEnd,
-        },
-        stroke: color,
-        strokeWidth,
-        opacity,
-        zIndex: elements.length > 0 ? 
-          Math.max(...elements.map(el => el.zIndex || 0)) + 1 : 0
-      });
-    } else {
-      setCurrentElement({
-        id,
-        x1: canvasX,
-        y1: canvasY,
-        x2: canvasX,
-        y2: canvasY,
-        tool: currentTool,
-        stroke: color,
-        strokeWidth,
-        opacity,
-        fillStyle,
-        hachureAngle,
-        hachureGap,
-        zIndex: elements.length > 0 ? 
-          Math.max(...elements.map(el => el.zIndex || 0)) + 1 : 0
-      });
-    }
-  };
-
-  // Handle mouse move
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isResizing || isMoving) return;
-
-    const { clientX: x, clientY: y } = e;
-
-      // First transform screen coordinates to canvas coordinates
-    const canvasCoords = screenToCanvas(x, y);
-    const { x: canvasX, y: canvasY } = canvasCoords;
-
-    if (isDrawing && currentElement?.tool === "select") {
-  
-      setCurrentElement(prev => ({
-        ...prev!,
-        x2: canvasX,
-        y2: canvasY
-      }));
-  
-      // Immediate visual feedback
-      renderCanvas();
-      return;
-    }
-    if (currentTool === "freedraw" && isDrawing && currentElement) {
-  
-      // setCurrentElement(prev => ({
-      //   ...prev!,
-      //   points: [...prev!.points!, [canvasX, canvasY]],
-      //   originalPoints: [...prev!.originalPoints!, [canvasX, canvasY]],
-      //   x2: canvasX,
-      //   y2: canvasY,
-      // }));
-          // For freehand, we need to capture the actual canvas coordinates
-    setCurrentElement(prev => {
-      if (!prev) return prev;
-      
-      // Calculate the actual position on canvas (accounting for zoom and offset)
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return prev;
-      
-      const x = (e.clientX - rect.left - offset.x) / zoom;
-      const y = (e.clientY - rect.top - offset.y) / zoom;
-      
-      return {
-        ...prev,
-        points: [...(prev.points || []), [x, y]],
-        originalPoints: [...(prev.originalPoints || []), [x, y]],
-        x2: x,
-        y2: y,
-      };
-    });
-    return;
-    }
-    if (currentTool === "pan" && isPanning) {
-      const dx = x - panStart.x;
-      const dy = y - panStart.y;
-      setOffset((prev) => ({
-        x: prev.x + dx,
-        y: prev.y + dy,
-      }));
-      setPanStart({ x, y });
-      return;
-    }
-
-    if (currentTool === "eraser" && isErasing) {
-      handleEraserMouseMove(x, y);
-      return;
-    }
-
-    if (!isDrawing || !currentElement) return;
-
-    if (currentTool === "freedraw" && currentElement.points) {
-      setCurrentElement((prev) => ({
-        ...prev!,
-        points: [...prev!.points!, [canvasX, canvasY]],
-        x2: canvasX,
-        y2: canvasY,
-      }));
-    } else {
-      setCurrentElement((prev) => ({
-        ...prev!,
-        x2: canvasX,
-        y2: canvasY,
-      }));
-    }
-  };
-
-  // Handle mouse up
-  const handleMouseUp = () => {
-    if (isResizing) {
-      stopResizing();
-      return;
-    }
-
-    if (isMoving) {
-      stopMoving();
-      return;
-    }
-
-    if (currentTool === "pan" && isPanning) {
-      setIsPanning(false);
-      return;
-    }
-
-    if (currentTool === "eraser" && isErasing) {
-      handleEraserMouseUp();
-      return;
-    }
-
-    if (!isDrawing || !currentElement) return;
-
-    if (currentTool === "select" && currentElement.tool === "rectangle") {
-      const minX = Math.min(currentElement.x1, currentElement.x2);
-      const maxX = Math.max(currentElement.x1, currentElement.x2);
-      const minY = Math.min(currentElement.y1, currentElement.y2);
-      const maxY = Math.max(currentElement.y1, currentElement.y2);
-
-      const results = rtreeRef.current.search({
-        minX,
-        minY,
-        maxX,
-        maxY
-      });
-
-      const selected = results
-        .map(result => elements.find(el => el.id === result.id))
-        .filter(el => el && isElementInSelection(el, currentElement)) as Element[];
-      
-      setSelectedElements(selected);
-      setIsDrawing(false);
-      setCurrentElement(null);
-      return;
-    }
-
-    if (
-      currentTool === "freedraw" &&
-      currentElement.points &&
-      currentElement.points.length < 2
-    ) {
-      setIsDrawing(false);
-      setCurrentElement(null);
-      return;
-    }
-
-    if (
-      currentElement.tool !== "freedraw" &&
-      currentElement.x1 === currentElement.x2 &&
-      currentElement.y1 === currentElement.y2
-    ) {
-      setIsDrawing(false);
-      setCurrentElement(null);
-      return;
-    }
-
-    const elementToAdd = {
-      ...currentElement,
-      roughElement: [
-        "rectangle",
-        "ellipse",
-        "line",
-        "arrow",
-        "diamond",
-      ].includes(currentElement.tool)
-        ? createRoughElement(currentElement)
-        : undefined,
-    };
-
-    if (currentTool === "freedraw" && currentElement?.points) {
-      if (currentElement.points.length >= 2) {
-        const boundingBox = calculateBoundingBox(currentElement.points);
-        const elementToAdd = {
-          ...currentElement,
-          x1: boundingBox.minX,
-          y1: boundingBox.minY,
-          x2: boundingBox.maxX,
-          y2: boundingBox.maxY,
-          boundingBox,
-          convexHull: currentElement.points.length > 2 ? 
-            calculateConvexHull(currentElement.points) : undefined
-        };
-        
-        setElementsWithHistory([...elements, elementToAdd]);
-        setSelectedElements([elementToAdd]);
-      }
-      setIsDrawing(false);
-      setCurrentElement(null);
-      return;
-    }
-
-    setElementsWithHistory([...elements, elementToAdd]);
-    setIsDrawing(false);
-    setCurrentElement(null);
-
-    if (currentTool !== "select") {
-      setCurrentTool("select");
-      setSelectedElements([elementToAdd]);
-    }
-  };
-
-  // Handle key down
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Delete" && selectedElements.length > 0) {
-      deleteSelected();
-    }
-  };
-
-  // Define tools
-  const tools = [
-    { icon: <MousePointer2 size={20} />, tool: "select", title: "Select" },
-    {
-      icon: <RectangleHorizontal size={20} />,
-      tool: "rectangle",
-      title: "Rectangle",
-    },
-    { icon: <Diamond size={20} />, tool: "diamond", title: "Diamond" },
-    { icon: <Circle size={20} />, tool: "ellipse", title: "Ellipse" },
-    { icon: <ArrowRight size={20} />, tool: "arrow", title: "Arrow" },
-    { icon: <Minus size={20} />, tool: "line", title: "Line" },
-    { icon: <Pencil size={20} />, tool: "freedraw", title: "Freehand" },
-    { icon: <Type size={20} />, tool: "text", title: "Text" },
-    { icon: <Eraser size={20} />, tool: "eraser", title: "Eraser" },
-    { icon: <Move size={20} />, tool: "pan", title: "Pan" },
-  ];
-  if(currentElement?.originalPoints){
-    console.log("Element", currentElement?.originalPoints, currentElement?.points);  
-  }
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: "100vw",
-        height: "100vh",
-        overflow: "hidden",
-        cursor:
-          currentTool === "pan"
-            ? isPanning
-              ? "grabbing"
-              : "grab"
-            : currentTool === "select"
-            ? "default"
-            : currentTool === "eraser"
-            ? isErasing
-              ? "cell"
-              : "default"
-            : "crosshair",
-      }}
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      onWheel={handleWheel}
-    >
-      {/* Toolbar */}
-      <div style={toolbarStyle}>
-        {/* Tools */}
-        <div style={{ display: "flex", gap: "8px" }}>
-          {tools.map(({ icon, tool, title }) => (
+    return (
+      <div className="drawing-tool__toolbar">
+        <div className="drawing-tool__toolbar-group">
+          {tools.map(tool => (
             <button
-              key={tool}
-              style={currentTool === tool ? activeButtonStyle : buttonStyle}
-              onClick={() => setCurrentTool(tool)}
-              title={title}
+              key={tool.id}
+              className={`drawing-tool__tool-button ${activeTool === tool.id ? 'drawing-tool__tool-button--active' : ''
+                }`}
+              onClick={() => setActiveTool(tool.id)}
+              title={tool.label}
             >
-              {icon}
+              <ToolIcon iconName={tool.icon} size={18} />
             </button>
           ))}
         </div>
 
-        {/* Group Button */}
-        <button
-          style={selectedElements.length > 1 ? activeButtonStyle : buttonStyle}
-          onClick={groupSelected}
-          disabled={selectedElements.length < 2}
-          title="Group Selected (Ctrl+G)"
-        >
-          <Group size={20} />
-        </button>
+        <div className="drawing-tool__toolbar-group">
+          <label className="drawing-tool__property-label">
+            <ToolIcon iconName="PenTool" size={16} />
+          </label>
+          <select
+            value={drawingMode}
+            onChange={(e) => setDrawingMode(e.target.value as DrawingMode)}
+            disabled={activeTool !== 'freehand'}
+          >
+            <option value="rough">Rough</option>
+            <option value="freehand">Smooth</option>
+          </select>
+        </div>
 
-        {/* Ungroup Button */}
-        <button
-          style={selectedElements.some(el => el.groupIds && el.groupIds.length > 0) ? 
-            activeButtonStyle : buttonStyle}
-          onClick={ungroupSelected}
-          disabled={!selectedElements.some(el => el.groupIds && el.groupIds.length > 0)}
-          title="Ungroup Selected (Ctrl+Shift+G)"
-        >
-          <Ungroup size={20} />
-        </button>
-
-        {/* Bring to Front Button */}
-        <button
-          style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
-          onClick={bringToFront}
-          disabled={selectedElements.length === 0}
-          title="Bring to Front (F)"
-        >
-          <BringToFront size={20} />
-        </button>
-
-        {/* Send to Back Button */}
-        <button
-          style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
-          onClick={sendToBack}
-          disabled={selectedElements.length === 0}
-          title="Send to Back (B)"
-        >
-          <SendToBack size={20} />
-        </button>
-
-        {/* Delete Button */}
-        <button
-          style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
-          onClick={deleteSelected}
-          disabled={selectedElements.length === 0}
-          title="Delete Selected (Delete)"
-        >
-          <Trash2 size={20} />
-        </button>
-
-        {/* Copy Button */}
-        <button
-          style={selectedElements.length > 0 ? activeButtonStyle : buttonStyle}
-          onClick={copySelected}
-          disabled={selectedElements.length === 0}
-          title="Copy Selected (Ctrl+C)"
-        >
-          <Clipboard size={20} />
-        </button>
-
-        {/* Paste Button */}
-        <button
-          style={copiedElements.length > 0 ? activeButtonStyle : buttonStyle}
-          onClick={pasteElements}
-          disabled={copiedElements.length === 0}
-          title="Paste (Ctrl+V)"
-        >
-          <Copy size={20} />
-        </button>
-
-        {/* Clear All Button */}
-        <button
-          style={buttonStyle}
-          onClick={clearCanvas}
-          title="Clear Canvas"
-        >
-          <Trash2 size={20} />
-        </button>
-
-        {/* Color Picker */}
-        <div style={{ display: "flex", gap: "4px", marginLeft: "8px" }}>
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              style={{
-                ...buttonStyle,
-                backgroundColor: c,
-                width: "20px",
-                height: "20px",
-                borderRadius: "50%",
-              }}
-              onClick={() => setColor(c)}
-              title={`Color ${c}`}
-            />
-          ))}
+        <div className="drawing-tool__toolbar-group">
+          <label className="drawing-tool__property-label">
+            <ToolIcon iconName="Palette" size={16} />
+          </label>
           <input
             type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            style={colorInputStyle}
-            title="Stroke Color"
+            className="drawing-tool__color-picker"
+            value={currentColor}
+            onChange={(e) => setCurrentColor(e.target.value)}
           />
         </div>
 
-        {/* Stroke Width */}
-        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-          <span style={{ fontSize: "14px" }}>Width:</span>
+        <div className="drawing-tool__toolbar-group">
+          <label className="drawing-tool__property-label">
+            <ToolIcon iconName="LineChart" size={16} />
+          </label>
           <input
             type="range"
             min="1"
-            max="10"
-            value={strokeWidth}
-            onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-            style={rangeInputStyle}
+            max="20"
+            value={currentStrokeWidth}
+            onChange={(e) => setCurrentStrokeWidth(parseInt(e.target.value))}
+            className="drawing-tool__slider"
           />
         </div>
 
-        {/* Opacity */}
-        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-          <span style={{ fontSize: "14px" }}>Opacity:</span>
+        <div className="drawing-tool__toolbar-group">
+          <label className="drawing-tool__property-label">
+            <ToolIcon iconName="Gauge" size={16} />
+          </label>
           <input
             type="range"
-            min="10"
-            max="100"
-            value={opacity}
-            onChange={(e) => setOpacity(parseInt(e.target.value))}
-            style={rangeInputStyle}
+            min="0"
+            max="10"
+            step="0.1"
+            value={roughness}
+            onChange={(e) => setRoughness(parseFloat(e.target.value))}
+            className="drawing-tool__slider"
+            disabled={drawingMode !== 'rough'}
           />
         </div>
 
-        {/* Pan Controls */}
-        <div style={{ display: "flex", gap: "4px" }}>
-          <button
-            onClick={() => pan("left")}
-            title="Pan Left"
-            style={buttonStyle}
-          >
-            <ChevronLeft size={20} />
+        <div className="drawing-tool__toolbar-group">
+          <button className="drawing-tool__tool-button" onClick={onZoomIn} title="Zoom In">
+            <ToolIcon iconName="ZoomIn" size={18} />
           </button>
-          <button
-            onClick={() => pan("right")}
-            title="Pan Right"
-            style={buttonStyle}
-          >
-            <ChevronRight size={20} />
+          <button className="drawing-tool__tool-button" onClick={onZoomOut} title="Zoom Out">
+            <ToolIcon iconName="ZoomOut" size={18} />
           </button>
         </div>
 
-        {/* Grid Toggle */}
-        <button
-          style={showGrid ? activeButtonStyle : buttonStyle}
-          onClick={() => setShowGrid(!showGrid)}
-          title="Toggle Grid"
-        >
-          <Grid size={20} />
-        </button>
+        <div className="drawing-tool__toolbar-group">
+          <button className="drawing-tool__tool-button" onClick={onCopy} title="Copy">
+            <ToolIcon iconName="Copy" size={18} />
+          </button>
+          <button className="drawing-tool__tool-button" onClick={onPaste} title="Paste">
+            <ToolIcon iconName="ClipboardPaste" size={18} />
+          </button>
+          <button className="drawing-tool__tool-button" onClick={onDelete} title="Delete">
+            <ToolIcon iconName="Trash2" size={18} />
+          </button>
+        </div>
 
-        {/* Settings */}
-        <button
-          style={showSettings ? activeButtonStyle : buttonStyle}
-          onClick={() => setShowSettings(!showSettings)}
-          title="Settings"
-        >
-          <Settings size={20} />
-        </button>
-
-        {/* Export */}
-        <button style={buttonStyle} onClick={exportPNG} title="Export PNG">
-          <Download size={20} />
-        </button>
-
-        {/* Undo/Redo */}
-        <button
-          style={buttonStyle}
-          onClick={undo}
-          disabled={historyIndex <= 0}
-          title="Undo (Ctrl+Z)"
-        >
-          <Undo2 size={20} />
-        </button>
-        <button
-          style={buttonStyle}
-          onClick={redo}
-          disabled={historyIndex >= history.length - 1}
-          title="Redo (Ctrl+Y)"
-        >
-          <Redo2 size={20} />
-        </button>
-
-        {/* Collaboration */}
-        <button
-          style={collaborationEnabled ? activeButtonStyle : buttonStyle}
-          onClick={() => setCollaborationEnabled(!collaborationEnabled)}
-          title={
-            collaborationEnabled
-              ? "Disable Collaboration"
-              : "Enable Collaboration"
-          }
-        >
-          {collaborationEnabled ? (
-            <Share2Off size={20} />
-          ) : (
-            <Share2 size={20} />
-          )}
-        </button>
-
-        {/* Preview Toggle */}
-        <button
-          style={showPreview ? activeButtonStyle : buttonStyle}
-          onClick={() => setShowPreview(!showPreview)}
-          title={showPreview ? "Hide Preview" : "Show Preview"}
-        >
-          {showPreview ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
-        </button>
+        <div className="drawing-tool__toolbar-group">
+          <button className="drawing-tool__tool-button" onClick={onGroup} title="Group">
+            <ToolIcon iconName="Combine" size={18} />
+          </button>
+          <button className="drawing-tool__tool-button" onClick={onUngroup} title="Ungroup">
+            <ToolIcon iconName="Split" size={18} />
+          </button>
+        </div>
       </div>
+    );
+  };
 
-      {/* Settings Panel */}
-      {showSettings && (
-        <div style={settingsPanelStyle}>
-          <h4 style={{ margin: "0 0 8px 0" }}>RoughJS Settings</h4>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Roughness:</span>
-            <input
-              type="range"
-              min="0"
-              max="3"
-              step="0.1"
-              value={roughness}
-              onChange={(e) => setRoughness(parseFloat(e.target.value))}
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {roughness.toFixed(1)}
-            </span>
-          </div>
+const PropertiesPanel: React.FC<{
+  selectedObject: fabric.Object | null;
+  onPropertyChange: (property: string, value: any) => void;
+}> = ({ selectedObject, onPropertyChange }) => {
+  if (!selectedObject) {
+    return (
+      <div className="drawing-tool__properties-panel">
+        <p>No object selected</p>
+      </div>
+    );
+  }
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Fill Style:</span>
-            <select
-              value={fillStyle}
-              onChange={(e) => setFillStyle(e.target.value)}
-              style={{ flex: 1 }}
-            >
-              {FILL_STYLES.map((style) => (
-                <option key={style} value={style}>
-                  {style}
-                </option>
-              ))}
-            </select>
-          </div>
+  const commonProperties = [
+    { label: 'Fill', type: 'color', key: 'fill', icon: 'PaintBucket' },
+    { label: 'Stroke', type: 'color', key: 'stroke', icon: 'PenLine' },
+    { label: 'Stroke Width', type: 'number', key: 'strokeWidth', min: 1, max: 20, icon: 'LineChart' },
+    { label: 'Opacity', type: 'range', key: 'opacity', min: 0, max: 1, step: 0.1, icon: 'Droplet' }
+  ];
 
-          {fillStyle === "hachure" || fillStyle === "cross-hatch" ? (
-            <>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <span style={{ fontSize: "14px", width: "80px" }}>
-                  Hachure Angle:
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="180"
-                  step="1"
-                  value={hachureAngle}
-                  onChange={(e) => setHachureAngle(parseInt(e.target.value))}
-                  style={{ flex: 1 }}
-                />
-                <span style={{ width: "30px", textAlign: "right" }}>
-                  {hachureAngle}°
-                </span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <span style={{ fontSize: "14px", width: "80px" }}>
-                  Hachure Gap:
-                </span>
-                <input
-                  type="range"
-                  min="1"
-                  max="20"
-                  step="1"
-                  value={hachureGap}
-                  onChange={(e) => setHachureGap(parseInt(e.target.value))}
-                  style={{ flex: 1 }}
-                />
-                <span style={{ width: "30px", textAlign: "right" }}>
-                  {hachureGap}
-                </span>
-              </div>
-            </>
-          ) : null}
+  const textProperties = [
+    { label: 'Font Size', type: 'number', key: 'fontSize', min: 8, max: 72, icon: 'Type' },
+    { label: 'Font Family', type: 'select', key: 'fontFamily', options: ['Arial', 'Verdana', 'Times New Roman', 'Courier New'], icon: 'Font' }
+  ];
 
-          <h4 style={{ margin: "8px 0" }}>Freehand Settings</h4>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Thinning:</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={freehandSettings.thinning}
-              onChange={(e) =>
-                setFreehandSettings((prev) => ({
-                  ...prev,
-                  thinning: parseFloat(e.target.value),
-                }))
-              }
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {freehandSettings.thinning.toFixed(1)}
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Smoothing:</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={freehandSettings.smoothing}
-              onChange={(e) =>
-                setFreehandSettings((prev) => ({
-                  ...prev,
-                  smoothing: parseFloat(e.target.value),
-                }))
-              }
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {freehandSettings.smoothing.toFixed(1)}
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Streamline:</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={freehandSettings.streamline}
-              onChange={(e) =>
-                setFreehandSettings((prev) => ({
-                  ...prev,
-                  streamline: parseFloat(e.target.value),
-                }))
-              }
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {freehandSettings.streamline.toFixed(1)}
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>
-              Taper Start:
-            </span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value={freehandSettings.taperStart}
-              onChange={(e) =>
-                setFreehandSettings((prev) => ({
-                  ...prev,
-                  taperStart: parseInt(e.target.value),
-                }))
-              }
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {freehandSettings.taperStart}
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Taper End:</span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value={freehandSettings.taperEnd}
-              onChange={(e) =>
-                setFreehandSettings((prev) => ({
-                  ...prev,
-                  taperEnd: parseInt(e.target.value),
-                }))
-              }
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {freehandSettings.taperEnd}
-            </span>
-          </div>
+  const getPropertyValue = (key: string): any => {
+    return (selectedObject as any)[key] || '';
+  };
 
-          <h4 style={{ margin: "8px 0" }}>Grid Settings</h4>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Grid Size:</span>
-            <input
-              type="range"
-              min="10"
-              max="50"
-              step="5"
-              value={gridSize}
-              onChange={(e) => setGridSize(parseInt(e.target.value))}
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {gridSize}
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Contrast:</span>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.1"
-              value={gridContrast}
-              onChange={(e) => setGridContrast(parseFloat(e.target.value))}
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {gridContrast.toFixed(1)}
-            </span>
-          </div>
-        </div>
-      )}
+  const handleChange = (key: string, value: any): void => {
+    onPropertyChange(key, value);
+  };
 
-      {/* Properties Panel */}
-      {selectedElements.length === 1 && (
-        <div style={propertiesPanelStyle}>
-          <h4 style={{ margin: 0 }}>Properties</h4>
+  return (
+    <div className="drawing-tool__properties-panel">
+      <h3>Object Properties</h3>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Stroke:</span>
+      {commonProperties.map(prop => (
+        <div key={prop.key} className="drawing-tool__property-group">
+          <label className="drawing-tool__property-label">
+            <ToolIcon iconName={prop.icon} size={16} />
+            {prop.label}
+          </label>
+          {prop.type === 'color' ? (
             <input
               type="color"
-              value={selectedElements[0].stroke || color}
-              onChange={(e) => {
-                const newColor = e.target.value;
-                setElements((prev) =>
-                  prev.map((el) => {
-                    if (el.id === selectedElements[0].id) {
-                      const updatedEl = { ...el, stroke: newColor };
-                      return {
-                        ...updatedEl,
-                        roughElement: [
-                          "rectangle",
-                          "ellipse",
-                          "line",
-                          "arrow",
-                          "diamond",
-                        ].includes(el.tool)
-                          ? createRoughElement(updatedEl)
-                          : undefined,
-                      };
-                    }
-                    return el;
-                  })
-                );
-                setColor(newColor);
-              }}
-              style={colorInputStyle}
+              value={getPropertyValue(prop.key)}
+              onChange={(e) => handleChange(prop.key, e.target.value)}
+              className="drawing-tool__property-input"
             />
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Width:</span>
+          ) : prop.type === 'select' ? (
+            <select
+              value={getPropertyValue(prop.key)}
+              onChange={(e) => handleChange(prop.key, e.target.value)}
+              className="drawing-tool__property-input"
+            >
+              {prop.options?.map((option: string) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          ) : (
             <input
-              type="range"
-              min="1"
-              max="10"
-              value={selectedElements[0].strokeWidth || strokeWidth}
-              onChange={(e) => {
-                const width = parseInt(e.target.value);
-                setElements((prev) =>
-                  prev.map((el) =>
-                    el.id === selectedElements[0].id
-                      ? { ...el, strokeWidth: width }
-                      : el
-                  )
-                );
-                setStrokeWidth(width);
-              }}
-              style={{ flex: 1 }}
+              type={prop.type}
+              value={getPropertyValue(prop.key)}
+              onChange={(e) => handleChange(prop.key, prop.type === 'number' ? parseInt(e.target.value) : e.target.value)}
+              min={prop.min}
+              max={prop.max}
+              step={prop.step}
+              className="drawing-tool__property-input"
             />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {selectedElements[0].strokeWidth || strokeWidth}
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Opacity:</span>
-            <input
-              type="range"
-              min="10"
-              max="100"
-              value={selectedElements[0].opacity || opacity}
-              onChange={(e) => {
-                const op = parseInt(e.target.value);
-                setElements((prev) =>
-                  prev.map((el) =>
-                    el.id === selectedElements[0].id
-                      ? { ...el, opacity: op }
-                      : el
-                  )
-                );
-                setOpacity(op);
-              }}
-              style={{ flex: 1 }}
-            />
-            <span style={{ width: "30px", textAlign: "right" }}>
-              {selectedElements[0].opacity || opacity}%
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", width: "80px" }}>Label:</span>
-            <input
-              type="text"
-              value={selectedElements[0].label || ""}
-              onChange={(e) => {
-                setElements((prev) =>
-                  prev.map((el) =>
-                    el.id === selectedElements[0].id
-                      ? { ...el, label: e.target.value }
-                      : el
-                  )
-                );
-              }}
-              style={{ flex: 1, ...inputStyle }}
-              placeholder="Element label"
-            />
-          </div>
-
-          {["rectangle", "ellipse", "diamond"].includes(
-            selectedElements[0].tool
-          ) && (
-            <>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <span style={{ fontSize: "14px", width: "80px" }}>Fill:</span>
-                <input
-                  type="color"
-                  value={selectedElements[0].fill || "#ffffff00"}
-                  onChange={(e) => {
-                    setElements((prev) =>
-                      prev.map((el) =>
-                        el.id === selectedElements[0].id
-                          ? { ...el, fill: e.target.value }
-                          : el
-                      )
-                    );
-                  }}
-                  style={colorInputStyle}
-                />
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <span style={{ fontSize: "14px", width: "80px" }}>
-                  Fill Style:
-                </span>
-                <select
-                  value={selectedElements[0].fillStyle || fillStyle}
-                  onChange={(e) => {
-                    setElements((prev) =>
-                      prev.map((el) =>
-                        el.id === selectedElements[0].id
-                          ? { ...el, fillStyle: e.target.value }
-                          : el
-                      )
-                    );
-                    setFillStyle(e.target.value);
-                  }}
-                  style={{ flex: 1 }}
-                >
-                  {FILL_STYLES.map((style) => (
-                    <option key={style} value={style}>
-                      {style}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {(selectedElements[0].fillStyle === "hachure" ||
-                selectedElements[0].fillStyle === "cross-hatch") && (
-                <>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <span style={{ fontSize: "14px", width: "80px" }}>
-                      Hachure Angle:
-                    </span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="180"
-                      step="1"
-                      value={selectedElements[0].hachureAngle || hachureAngle}
-                      onChange={(e) => {
-                        const angle = parseInt(e.target.value);
-                        setElements((prev) =>
-                          prev.map((el) =>
-                            el.id === selectedElements[0].id
-                              ? { ...el, hachureAngle: angle }
-                              : el
-                          )
-                        );
-                        setHachureAngle(angle);
-                      }}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ width: "30px", textAlign: "right" }}>
-                      {selectedElements[0].hachureAngle || hachureAngle}°
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <span style={{ fontSize: "14px", width: "80px" }}>
-                      Hachure Gap:
-                    </span>
-                    <input
-                      type="range"
-                      min="1"
-                      max="20"
-                      step="1"
-                      value={selectedElements[0].hachureGap || hachureGap}
-                      onChange={(e) => {
-                        const gap = parseInt(e.target.value);
-                        setElements((prev) =>
-                          prev.map((el) =>
-                            el.id === selectedElements[0].id
-                              ? { ...el, hachureGap: gap }
-                              : el
-                          )
-                        );
-                        setHachureGap(gap);
-                      }}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ width: "30px", textAlign: "right" }}>
-                      {selectedElements[0].hachureGap || hachureGap}
-                    </span>
-                  </div>
-                </>
-              )}
-            </>
           )}
         </div>
-      )}
+      ))}
 
-      {/* Collaboration Panel */}
-      {collaborationEnabled && (
-        <div style={collaborationPanelStyle}>
-          <div style={{ fontSize: "14px" }}>
-            Your ID: {peerId || "Generating..."}
-          </div>
-          {peerId && (
-            <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-              <input
-                type="text"
-                value={generateShareUrl()}
-                readOnly
-                style={{ ...inputStyle, flex: 1 }}
-              />
-              <button
-                onClick={copyShareUrl}
-                style={buttonStyle}
-                title="Copy Share URL"
-              >
-                <Copy size={16} />
-              </button>
-            </div>
-          )}
-          <input
-            type="text"
-            placeholder="Remote Peer ID"
-            value={remotePeerId}
-            onChange={(e) => setRemotePeerId(e.target.value)}
-            style={inputStyle}
-          />
-          <button
-            onClick={connectToPeer}
-            style={connectButtonStyle}
-            disabled={!remotePeerId || connectionCount >= 3}
-          >
-            {connectionCount >= 3 ? "Max Connections" : "Connect"}
-          </button>
-          {connectionCount > 0 && (
-            <div style={{ fontSize: "12px", textAlign: "center" }}>
-              Active connections: {connectionCount}/3
-            </div>
+      {selectedObject.type === 'i-text' && textProperties.map(prop => (
+        <div key={prop.key} className="drawing-tool__property-group">
+          <label className="drawing-tool__property-label">
+            <ToolIcon iconName={prop.icon} size={16} />
+            {prop.label}
+          </label>
+          {prop.type === 'select' ? (
+            <select
+              value={getPropertyValue(prop.key)}
+              onChange={(e) => handleChange(prop.key, e.target.value)}
+              className="drawing-tool__property-input"
+            >
+              {prop.options?.map((option: string) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type={prop.type}
+              value={getPropertyValue(prop.key)}
+              onChange={(e) => handleChange(prop.key, parseInt(e.target.value))}
+              min={prop.min}
+              max={prop.max}
+              className="drawing-tool__property-input"
+            />
           )}
         </div>
-      )}
-
-      {/* Rulers and Guides */}
-      <RulerCorner />
-      <Ruler 
-        type="horizontal" 
-        width={dimensions.width - 30} 
-        height={dimensions.height} 
-        zoom={zoom} 
-        offset={offset}
-        onMouseDown={(e) => handleRulerMouseDown(e, 'horizontal')}
-      />
-      <Ruler 
-        type="vertical" 
-        width={dimensions.width} 
-        height={dimensions.height - 30} 
-        zoom={zoom} 
-        offset={offset}
-        onMouseDown={(e) => handleRulerMouseDown(e, 'vertical')}
-      />
-      <Guides guides={guides} />
-
-      {/* Canvas */}
-      <canvas
-        ref={canvasRef}
-        width={dimensions.width}
-        height={dimensions.height}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-        }}
-      />
-
-      {/* Preview */}
-      {showPreview && (
-        <div style={previewStyle}>
-          <canvas
-            ref={previewRef}
-            width={200}
-            height={150}
-            onClick={(e) => {
-              const rect = previewRef.current?.getBoundingClientRect();
-              if (!rect) return;
-
-              const x = e.clientX - rect.left;
-              const y = e.clientY - rect.top;
-
-              const canvasX =
-                ((x / 200) * dimensions.width) / zoom - offset.x / zoom;
-              const canvasY =
-                ((y / 150) * dimensions.height) / zoom - offset.y / zoom;
-
-              setOffset({
-                x: -canvasX * zoom + dimensions.width / 2,
-                y: -canvasY * zoom + dimensions.height / 2,
-              });
-            }}
-          />
-        </div>
-      )}
-
-      {/* Text Input Elements */}
-      {elements.map(element =>
-        element.tool === 'text' && element.isEditing && (
-          <input
-            key={element.id}
-            ref={textInputRef}
-            type="text"
-            value={element.text || ''}
-            onChange={(e) => {
-              setElements(prev => prev.map(el => 
-                el.id === element.id ? {...el, text: e.target.value} : el
-              ));
-            }}
-            onBlur={() => handleTextBlur(element)}
-            style={{
-              position: 'absolute',
-              left: `${offset.x + element.x1 * zoom}px`,
-              top: `${offset.y + element.y1 * zoom}px`,
-              transform: `scale(${zoom})`,
-              transformOrigin: 'top left',
-              fontSize: '16px',
-              border: '1px solid #3d7eff',
-              background: 'white',
-              color: element.stroke || color,
-              fontFamily: 'Arial',
-              padding: '2px 4px',
-              zIndex: 100,
-              minWidth: '100px'
-            }}
-            autoFocus
-          />
-        )
-      )}
-
-      {/* Label Input Elements */}
-      {elements.map(element =>
-        element.isLabelEditing && (
-          <input
-            key={`label-${element.id}`}
-            ref={labelInputRef}
-            type="text"
-            value={element.label || ''}
-            onChange={(e) => {
-              setElements(prev => prev.map(el => 
-                el.id === element.id ? {...el, label: e.target.value} : el
-              ));
-            }}
-            onBlur={() => handleLabelBlur(element)}
-            style={{
-              position: 'absolute',
-              left: `${offset.x + ((element.x1 + element.x2) / 2) * zoom}px`,
-              top: `${offset.y + ((element.y1 + element.y2) / 2) * zoom}px`,
-              transform: `scale(${zoom})`,
-              transformOrigin: 'top left',
-              fontSize: '12px',
-              border: '1px solid #3d7eff',
-              background: 'white',
-              color: element.stroke || color,
-              fontFamily: 'Arial',
-              padding: '2px 4px',
-              zIndex: 100,
-              minWidth: '100px',
-              textAlign: 'center'
-            }}
-            autoFocus
-          />
-        )
-      )}
+      ))}
     </div>
   );
-}
+};
+
+const CollaborationPanel: React.FC<{
+  isHost: boolean;
+  connections: PeerConnection[];
+  localName: string;
+  onStartSession: (sessionName: string, userName: string) => void;
+  onJoinSession: (sessionId: string, userName: string) => void;
+  onEndSession: () => void;
+  onDisconnect: () => void;
+}> = ({
+  isHost,
+  connections,
+  localName,
+  onStartSession,
+  onJoinSession,
+  onEndSession,
+  onDisconnect
+}) => {
+    const [showStartModal, setShowStartModal] = useState(false);
+    const [showJoinModal, setShowJoinModal] = useState(false);
+    const [sessionName, setSessionName] = useState('');
+    const [userName, setUserName] = useState('');
+    const [joinSessionId, setJoinSessionId] = useState('');
+    const [joinUserName, setJoinUserName] = useState('');
+
+    const handleStartSession = () => {
+      if (sessionName && userName) {
+        onStartSession(sessionName, userName);
+        setShowStartModal(false);
+      }
+    };
+
+    const handleJoinSession = () => {
+      if (joinSessionId && joinUserName) {
+        onJoinSession(joinSessionId, joinUserName);
+        setShowJoinModal(false);
+      }
+    };
+
+    return (
+      <div className="collaboration-panel">
+        <h3>Collaboration</h3>
+
+        {connections.length === 0 ? (
+          <>
+            <button
+              className="collaboration-button"
+              onClick={() => setShowStartModal(true)}
+            >
+              <ToolIcon iconName="PlusCircle" size={16} /> Start Session
+            </button>
+            <button
+              className="collaboration-button"
+              onClick={() => setShowJoinModal(true)}
+            >
+              <ToolIcon iconName="Link" size={16} /> Join Session
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="participants-list">
+              <h4>Participants:</h4>
+              <div className="participant">
+                <ToolIcon iconName="User" size={14} />
+                <span>{localName} (You)</span>
+                {isHost && <span className="host-badge">Host</span>}
+              </div>
+              {connections.map(conn => (
+                <div key={conn.id} className="participant">
+                  <ToolIcon iconName="User" size={14} />
+                  <span>{conn.name}</span>
+                </div>
+              ))}
+            </div>
+
+            {isHost ? (
+              <button
+                className="collaboration-button danger"
+                onClick={onEndSession}
+              >
+                <ToolIcon iconName="Power" size={16} /> End Session
+              </button>
+            ) : (
+              <button
+                className="collaboration-button danger"
+                onClick={onDisconnect}
+              >
+                <ToolIcon iconName="Power" size={16} /> Leave Session
+              </button>
+            )}
+          </>
+        )}
+
+        {showStartModal && (
+          <div className="modal-overlay">
+            <div className="modal">
+              <h3>Start New Session</h3>
+              <div className="form-group">
+                <label>Session Name:</label>
+                <input
+                  type="text"
+                  value={sessionName}
+                  onChange={(e) => setSessionName(e.target.value)}
+                  placeholder="My Drawing Session"
+                />
+              </div>
+              <div className="form-group">
+                <label>Your Name:</label>
+                <input
+                  type="text"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  placeholder="Your Name"
+                />
+              </div>
+              <div className="modal-actions">
+                <button onClick={() => setShowStartModal(false)}>Cancel</button>
+                <button className="primary" onClick={handleStartSession}>Start Session</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showJoinModal && (
+          <div className="modal-overlay">
+            <div className="modal">
+              <h3>Join Session</h3>
+              <div className="form-group">
+                <label>Session ID:</label>
+                <input
+                  type="text"
+                  value={joinSessionId}
+                  onChange={(e) => setJoinSessionId(e.target.value)}
+                  placeholder="Enter session ID"
+                />
+              </div>
+              <div className="form-group">
+                <label>Your Name:</label>
+                <input
+                  type="text"
+                  value={joinUserName}
+                  onChange={(e) => setJoinUserName(e.target.value)}
+                  placeholder="Your Name"
+                />
+              </div>
+              <div className="modal-actions">
+                <button onClick={() => setShowJoinModal(false)}>Cancel</button>
+                <button className="primary" onClick={handleJoinSession}>Join Session</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+const DrawingTool: React.FC = () => {
+  // Refs
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
+  const roughCanvasRef = useRef<rough.RoughCanvas | null>(null);
+
+  // State
+  const [activeTool, setActiveTool] = useState<ToolType>('select');
+  const [drawingMode, setDrawingMode] = useState<DrawingMode>('rough');
+  const [currentColor, setCurrentColor] = useState('#000000');
+  const [currentStrokeWidth, setCurrentStrokeWidth] = useState(2);
+  const [roughness, setRoughness] = useState(1);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPoint, setStartPoint] = useState<Point | null>(null);
+  const [freehandPoints, setFreehandPoints] = useState<Point[]>([]);
+  const [selectedObject, setSelectedObject] = useState<fabric.Object | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [dimensions, setDimensions] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth - 40 : 800,
+    height: typeof window !== 'undefined' ? window.innerHeight - 200 : 600
+  });
+
+  // WebRTC State
+  const [isHost, setIsHost] = useState(false);
+  const [sessionId, setSessionId] = useState('');
+  const [localName, setLocalName] = useState('');
+  const [connections, setConnections] = useState<PeerConnection[]>([]);
+  const [showSessionEnded, setShowSessionEnded] = useState(false);
+
+  // Initialize canvas
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    const fabricCanvas = new fabric.Canvas(canvasRef.current, {
+      width: dimensions.width,
+      height: dimensions.height,
+      selection: true,
+      preserveObjectStacking: true,
+      backgroundColor: '#f5f5f5',
+      isDrawingMode: activeTool === 'freehand' // Enable drawing mode only for freehand
+    });
+    fabricCanvasRef.current = fabricCanvas;
+
+    const roughCanvas = rough.canvas(canvasRef.current);
+    roughCanvasRef.current = roughCanvas;
+
+    const savedData = loadFromLocalStorage('drawingCanvas');
+    if (savedData) {
+      fabricCanvas.loadFromJSON(savedData, () => {
+        fabricCanvas.renderAll();
+      });
+    }
+
+    setupCanvasEventListeners(fabricCanvas);
+
+    return () => {
+      fabricCanvas.dispose();
+    };
+  }, [activeTool, isDrawing]);
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const newWidth = window.innerWidth - 40;
+      const newHeight = window.innerHeight - 200;
+
+      setDimensions({
+        width: newWidth,
+        height: newHeight
+      });
+
+      if (fabricCanvasRef.current) {
+        fabricCanvasRef.current.setDimensions({
+          width: newWidth,
+          height: newHeight
+        });
+        fabricCanvasRef.current.renderAll();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+  }, []);
+
+  // WebRTC Functions
+  const initializeWebRTC = () => {
+    const configuration = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ]
+    };
+
+    const newConnections: PeerConnection[] = [];
+    let dataChannel: RTCDataChannel | null = null;
+
+    const createPeerConnection = (): RTCPeerConnection => {
+      const peerConnection = new RTCPeerConnection(configuration);
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('ICE candidate:', event.candidate);
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'disconnected' ||
+          peerConnection.connectionState === 'failed') {
+          setConnections(prev => prev.filter(conn => conn.connection !== peerConnection));
+        }
+      };
+
+      return peerConnection;
+    };
+
+    const handleDataChannelMessage = (event: MessageEvent) => {
+      try {
+        const data: PeerData = JSON.parse(event.data);
+
+        if (data.type === 'canvasState' && fabricCanvasRef.current) {
+          fabricCanvasRef.current.loadFromJSON(data.data, () => {
+            fabricCanvasRef.current?.renderAll();
+          });
+        }
+      } catch (error) {
+        console.error('Error handling data channel message:', error);
+      }
+    };
+
+    const startSession = async (sessionName: string, userName: string) => {
+      setIsHost(true);
+      setSessionId(generateSessionId());
+      setLocalName(userName);
+
+      const peerConnection = createPeerConnection();
+      dataChannel = peerConnection.createDataChannel('drawingData');
+
+      dataChannel.onmessage = handleDataChannelMessage;
+      dataChannel.onopen = () => {
+        console.log('Data channel opened');
+      };
+
+      newConnections.push({
+        id: 'demo-peer',
+        name: 'Demo Peer',
+        connection: peerConnection,
+        channel: dataChannel
+      });
+
+      setConnections(newConnections);
+    };
+
+    const joinSession = async (sessionId: string, userName: string) => {
+      setLocalName(userName);
+
+      const peerConnection = createPeerConnection();
+
+      peerConnection.ondatachannel = (event) => {
+        const channel = event.channel;
+        channel.onmessage = handleDataChannelMessage;
+        channel.onopen = () => {
+          console.log('Data channel opened');
+        };
+
+        newConnections.push({
+          id: sessionId,
+          name: 'Host',
+          connection: peerConnection,
+          channel: channel
+        });
+
+        setConnections(newConnections);
+      };
+    };
+
+    const syncCanvasState = (fabricCanvas: fabric.Canvas) => {
+      if (!fabricCanvas) return;
+
+      const canvasState = fabricCanvas.toJSON();
+      const data: PeerData = {
+        type: 'canvasState',
+        data: canvasState,
+        sender: localName
+      };
+
+      connections.forEach(conn => {
+        if (conn.channel.readyState === 'open') {
+          conn.channel.send(JSON.stringify(data));
+        }
+      });
+    };
+
+    const endSession = () => {
+      connections.forEach(conn => {
+        conn.connection.close();
+      });
+      setConnections([]);
+      setIsHost(false);
+      setSessionId('');
+      setShowSessionEnded(true);
+    };
+
+    const disconnect = () => {
+      connections.forEach(conn => {
+        conn.connection.close();
+      });
+      setConnections([]);
+      setShowSessionEnded(true);
+    };
+
+    const generateSessionId = (): string => {
+      return Math.random().toString(36).substring(2, 8);
+    };
+
+    return {
+      startSession,
+      joinSession,
+      syncCanvasState,
+      endSession,
+      disconnect
+    };
+  };
+
+  const webRTCFunctions = useRef(initializeWebRTC()).current;
+
+  // Helper functions for drawing
+  const drawFreehandTempPath = () => {
+    if (!fabricCanvasRef.current || freehandPoints.length < 2) return;
+
+    const strokeOptions = {
+      size: currentStrokeWidth,
+      thinning: 0.5,
+      smoothing: 0.5,
+      streamline: 0.5,
+      simulatePressure: true
+    };
+
+    const strokePoints = getStroke(
+      freehandPoints.map(p => [p.x, p.y]),
+      strokeOptions
+    );
+    const pathData = createFreehandPath(strokePoints);
+
+    fabricCanvasRef.current.remove((window as any)._tempPath);
+
+    const path = new fabric.Path(pathData, {
+      fill: currentColor,
+      stroke: 'transparent',
+      strokeWidth: 0,
+      selectable: false
+    });
+
+    fabricCanvasRef.current.add(path);
+    (window as any)._tempPath = path;
+    fabricCanvasRef.current.renderAll();
+  };
+
+  const drawTempShape = (start: Point, end: Point) => {
+    if (!fabricCanvasRef.current || !roughCanvasRef.current) return;
+
+    fabricCanvasRef.current.remove((window as any)._tempShape);
+
+    let tempShape: fabric.Object | null = null;
+
+    switch (activeTool) {
+      case 'rectangle':
+      case 'ellipse':
+      case 'diamond':
+      case 'arrow':
+      case 'line': {
+        const roughSvg = createRoughObject(
+          roughCanvasRef.current,
+          activeTool,
+          start,
+          end,
+          {
+            stroke: currentColor,
+            strokeWidth: currentStrokeWidth,
+            roughness
+          }
+        );
+
+        if (roughSvg) {
+          tempShape = new fabric.Path(roughSvg.path, {
+            fill: 'transparent',
+            stroke: currentColor,
+            strokeWidth: currentStrokeWidth,
+            selectable: false
+          });
+        }
+        break;
+      }
+      case 'bezier-arrow':
+        tempShape = createBezierArrow(start, end, {
+          stroke: currentColor,
+          strokeWidth: currentStrokeWidth
+        });
+        break;
+    }
+
+    if (tempShape) {
+      fabricCanvasRef.current.add(tempShape);
+      (window as any)._tempShape = tempShape;
+    }
+  };
+
+  const finishDrawing = () => {
+    if (!fabricCanvasRef.current || !startPoint) return;
+
+    // Remove temporary paths/shapes
+    fabricCanvasRef.current.remove((window as any)._tempPath);
+    fabricCanvasRef.current.remove((window as any)._tempShape);
+    delete (window as any)._tempPath;
+    delete (window as any)._tempShape;
+
+    // Get the final position
+    const pointer = fabricCanvasRef.current.getPointer(new Event('mouseup'));
+
+    if (activeTool === 'freehand') {
+      finishFreehandDrawing();
+    } else {
+      createShapeObject(startPoint, pointer);
+    }
+
+    setIsDrawing(false);
+    setStartPoint(null);
+    setFreehandPoints([]);
+  };
+
+  const setupCanvasEventListeners = (fabricCanvas: fabric.Canvas): void => {
+    fabricCanvas.off('mouse:down'); // Remove previous listeners
+    fabricCanvas.off('mouse:move');
+    fabricCanvas.off('mouse:up');
+
+    fabricCanvas.on('mouse:down', (options) => {
+      if (activeTool === 'select') return;
+
+      if (options.target) {
+        return;
+      }
+
+      const pointer = fabricCanvas.getPointer(options.e);
+      setStartPoint(pointer);
+      setIsDrawing(true);
+
+      if (activeTool === 'freehand') {
+        setFreehandPoints([{ x: pointer.x, y: pointer.y }]);
+      }
+
+      options.e.preventDefault();
+      options.e.stopPropagation();
+    });
+
+    fabricCanvas.on('mouse:move', (options) => {
+      if (!isDrawing || !startPoint || !fabricCanvasRef.current) return;
+
+      const pointer = fabricCanvas.getPointer(options.e);
+
+      if (activeTool === 'freehand') {
+        setFreehandPoints(prev => [...prev, { x: pointer.x, y: pointer.y }]);
+        drawFreehandTempPath();
+      } else {
+        drawTempShape(startPoint, pointer);
+      }
+
+      // options.e.preventDefault();
+      // options.e.stopPropagation();
+    });
+
+    fabricCanvas.on('mouse:up', (options) => {
+      if (!isDrawing || !startPoint || !fabricCanvasRef.current) return;
+
+      finishDrawing();
+    });
+
+    fabricCanvas.on('selection:created', (e) => {
+      setSelectedObject(e.selected?.[0] || null);
+    });
+
+    fabricCanvas.on('selection:updated', (e) => {
+      setSelectedObject(e.selected?.[0] || null);
+    });
+
+    fabricCanvas.on('selection:cleared', () => {
+      setSelectedObject(null);
+    });
+
+    fabricCanvas.on('object:modified', (e) => {
+      if (e.target) {
+        handleObjectModification(e.target);
+        saveCanvasState();
+        if (connections.length > 0) {
+          webRTCFunctions.syncCanvasState(fabricCanvas);
+        }
+      }
+    });
+  };
+
+  const createShapeObject = (start: Point, end: Point): void => {
+    if (!fabricCanvasRef.current || !roughCanvasRef.current) return;
+
+    const fabricCanvas = fabricCanvasRef.current;
+    const roughCanvas = roughCanvasRef.current;
+
+    let newObject: fabric.Object | null = null;
+
+    switch (activeTool) {
+      case 'rectangle':
+      case 'ellipse':
+      case 'diamond':
+      case 'arrow':
+      case 'line': {
+        const roughSvg = createRoughObject(roughCanvas, activeTool, start, end, {
+          stroke: currentColor,
+          strokeWidth: currentStrokeWidth,
+          roughness
+        });
+
+        if (roughSvg) {
+          newObject = new fabric.Path(roughSvg.path, {
+            fill: 'transparent',
+            stroke: currentColor,
+            strokeWidth: currentStrokeWidth,
+            selectable: true
+          });
+        }
+        break;
+      }
+      case 'bezier-arrow':
+        newObject = createBezierArrow(start, end, {
+          stroke: currentColor,
+          strokeWidth: currentStrokeWidth
+        });
+        break;
+      case 'text':
+        newObject = new fabric.IText('Double click to edit', {
+          left: start.x,
+          top: start.y,
+          fontFamily: 'Arial',
+          fill: currentColor,
+          fontSize: 20
+        });
+        break;
+    }
+
+    if (newObject) {
+      fabricCanvas.add(newObject);
+      fabricCanvas.setActiveObject(newObject);
+      setSelectedObject(newObject);
+      saveCanvasState();
+      if (connections.length > 0) {
+        webRTCFunctions.syncCanvasState(fabricCanvas);
+      }
+    }
+  };
+
+  const finishFreehandDrawing = (): void => {
+    if (freehandPoints.length < 2 || !fabricCanvasRef.current) return;
+
+    const fabricCanvas = fabricCanvasRef.current;
+    const strokeOptions = {
+      size: currentStrokeWidth,
+      thinning: 0.5,
+      smoothing: 0.5,
+      streamline: 0.5,
+      simulatePressure: true
+    };
+
+    const strokePoints = getStroke(
+      freehandPoints.map(p => [p.x, p.y]),
+      strokeOptions
+    );
+    const pathData = createFreehandPath(strokePoints);
+
+    const path = new fabric.Path(pathData, {
+      fill: currentColor,
+      stroke: 'transparent',
+      strokeWidth: 0,
+      selectable: true
+    });
+
+    const hullPoints = generateConvexHull(freehandPoints);
+    path.set({
+      selectionStyles: {
+        stroke: '#4D90FE',
+        strokeWidth: 1,
+        fill: 'rgba(77, 144, 254, 0.2)',
+        strokeDashArray: [5, 5]
+      },
+      points: hullPoints
+    });
+
+    fabricCanvas.add(path);
+    fabricCanvas.setActiveObject(path);
+    setSelectedObject(path);
+    saveCanvasState();
+    if (connections.length > 0) {
+      webRTCFunctions.syncCanvasState(fabricCanvas);
+    }
+  };
+
+  const saveCanvasState = (): void => {
+    if (!fabricCanvasRef.current) return;
+    const json = fabricCanvasRef.current.toJSON();
+    saveToLocalStorage('drawingCanvas', json);
+  };
+
+  const handleZoom = (direction: 'in' | 'out'): void => {
+    if (!fabricCanvasRef.current) return;
+    const newZoom = direction === 'in' ? zoomLevel * 1.2 : zoomLevel / 1.2;
+    setZoomLevel(newZoom);
+    fabricCanvasRef.current.setZoom(newZoom);
+  };
+
+  const handleCopy = (): void => {
+    if (fabricCanvasRef.current) copySelectedObjects(fabricCanvasRef.current);
+  };
+
+  const handlePaste = (): void => {
+    if (!fabricCanvasRef.current) return;
+    pasteObjects(fabricCanvasRef.current);
+    saveCanvasState();
+    if (connections.length > 0) {
+      webRTCFunctions.syncCanvasState(fabricCanvasRef.current);
+    }
+  };
+
+  const handleDelete = (): void => {
+    if (!fabricCanvasRef.current) return;
+    deleteSelectedObjects(fabricCanvasRef.current);
+    saveCanvasState();
+    if (connections.length > 0) {
+      webRTCFunctions.syncCanvasState(fabricCanvasRef.current);
+    }
+  };
+
+  const handleGroup = (): void => {
+    if (!fabricCanvasRef.current) return;
+    groupSelectedObjects(fabricCanvasRef.current);
+    saveCanvasState();
+    if (connections.length > 0) {
+      webRTCFunctions.syncCanvasState(fabricCanvasRef.current);
+    }
+  };
+
+  const handleUngroup = (): void => {
+    if (!fabricCanvasRef.current) return;
+    ungroupSelectedObjects(fabricCanvasRef.current);
+    saveCanvasState();
+    if (connections.length > 0) {
+      webRTCFunctions.syncCanvasState(fabricCanvasRef.current);
+    }
+  };
+
+  const handlePropertyChange = (property: string, value: any): void => {
+    if (!selectedObject || !fabricCanvasRef.current) return;
+    selectedObject.set(property, value);
+    fabricCanvasRef.current.renderAll();
+    saveCanvasState();
+    if (connections.length > 0) {
+      webRTCFunctions.syncCanvasState(fabricCanvasRef.current);
+    }
+  };
+
+  const handleStartSession = (sessionName: string, userName: string) => {
+    webRTCFunctions.startSession(sessionName, userName);
+  };
+
+  const handleJoinSession = (sessionId: string, userName: string) => {
+    webRTCFunctions.joinSession(sessionId, userName);
+  };
+
+  const handleEndSession = () => {
+    webRTCFunctions.endSession();
+  };
+
+  const handleDisconnect = () => {
+    webRTCFunctions.disconnect();
+  };
+
+  return (
+    <div className="drawing-tool">
+      <style>{styles}</style>
+
+      {showSessionEnded && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>Session Ended</h3>
+            <p>The drawing session has ended. You can start a new one if you'd like.</p>
+            <button
+              className="primary"
+              onClick={() => setShowSessionEnded(false)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Toolbar
+        activeTool={activeTool}
+        setActiveTool={setActiveTool}
+        drawingMode={drawingMode}
+        setDrawingMode={setDrawingMode}
+        currentColor={currentColor}
+        setCurrentColor={setCurrentColor}
+        currentStrokeWidth={currentStrokeWidth}
+        setCurrentStrokeWidth={setCurrentStrokeWidth}
+        roughness={roughness}
+        setRoughness={setRoughness}
+        onZoomIn={() => handleZoom('in')}
+        onZoomOut={() => handleZoom('out')}
+        onCopy={handleCopy}
+        onPaste={handlePaste}
+        onDelete={handleDelete}
+        onGroup={handleGroup}
+        onUngroup={handleUngroup}
+      />
+
+      <div className="drawing-tool__main-container">
+        <div className="drawing-tool__canvas-container">
+          <canvas
+            ref={canvasRef}
+            className="drawing-tool__canvas"
+            width={dimensions.width}
+            height={dimensions.height}
+          />
+        </div>
+
+        <div className="drawing-tool__side-panel">
+          <PropertiesPanel
+            selectedObject={selectedObject}
+            onPropertyChange={handlePropertyChange}
+          />
+
+          <CollaborationPanel
+            isHost={isHost}
+            connections={connections}
+            localName={localName}
+            onStartSession={handleStartSession}
+            onJoinSession={handleJoinSession}
+            onEndSession={handleEndSession}
+            onDisconnect={handleDisconnect}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DrawingTool;
